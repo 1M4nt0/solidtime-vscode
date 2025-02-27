@@ -10,24 +10,21 @@ let apiUrl: string | undefined;
 let organizationId: string | undefined;
 let memberId: string | undefined;
 const IDLE_LIMIT = 2 * 60 * 1000;
+let outputChannel: vscode.OutputChannel;
 
 export async function activate(context: vscode.ExtensionContext) {
   log("Extension activating");
 
-  apiKey = ((context.globalState.get("solidtime.apiKey") as string) || "")
-    .replace(/\/+$/, "")
-    .replace(/\/api\/v1$/, "");
-  apiUrl = context.globalState.get("solidtime.apiUrl") as string;
-  organizationId = context.globalState.get(
-    "solidtime.organizationId"
-  ) as string;
+  apiKey = ((context.globalState.get("solidtime.apiKey") as string) || "").trim();
+  apiUrl = ((context.globalState.get("solidtime.apiUrl") as string) || "").trim();
+  organizationId = ((context.globalState.get("solidtime.organizationId") as string) || "").trim();
 
   log("Initial config loaded", { apiKey: !!apiKey, apiUrl, organizationId });
 
-  if (apiUrl && !apiUrl.includes("/api/v1")) {
-    apiUrl = `${apiUrl.replace(/\/$/, "")}/api/v1`;
+  if (apiUrl) {
+    apiUrl = apiUrl.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
     await context.globalState.update("solidtime.apiUrl", apiUrl);
-    log("API URL updated with /api/v1", { apiUrl });
+    log("API URL normalized", { apiUrl });
   }
 
   if (!apiKey) {
@@ -73,7 +70,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("solidtime.setApiKey", async () => {
-      log("Setting API key");
       const key = await vscode.window.showInputBox({
         prompt: "Enter your Solidtime API key",
         value: apiKey,
@@ -86,7 +82,6 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
     vscode.commands.registerCommand("solidtime.setApiUrl", async () => {
-      log("Setting API URL");
       const url = await vscode.window.showInputBox({
         prompt: "Enter your Solidtime instance API URL",
         value: apiUrl,
@@ -99,7 +94,6 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
     vscode.commands.registerCommand("solidtime.setOrganizationId", async () => {
-      log("Setting organization ID");
       const orgId = await vscode.window.showInputBox({
         prompt: "Enter your Organization ID",
       });
@@ -247,17 +241,19 @@ interface TimeEntry {
 }
 
 function log(message: string, data?: any) {
-  const output = vscode.window.createOutputChannel("Solidtime");
-  output.appendLine(`[${new Date().toISOString()}] ${message}`);
+  if (!outputChannel) {
+    outputChannel = vscode.window.createOutputChannel("Solidtime");
+  }
+  outputChannel.appendLine(`[${new Date().toISOString()}] ${message}`);
   if (data) {
     if (data instanceof Error) {
-      output.appendLine(data.toString());
-      output.appendLine(data.stack || "No stack trace");
+      outputChannel.appendLine(data.toString());
+      outputChannel.appendLine(data.stack || "No stack trace");
     } else {
-      output.appendLine(JSON.stringify(data, null, 2));
+      outputChannel.appendLine(JSON.stringify(data, null, 2));
     }
   }
-  output.show();
+  outputChannel.show();
 }
 
 async function fetchMemberId(): Promise<void> {
