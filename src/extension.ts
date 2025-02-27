@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { sendUpdate, getEntries, getMember } from "./api";
+import { sendUpdate, getEntries, getMember, getOrganizations } from "./api";
 import { formatTimeSpent, hasTimePassed } from "./time";
 import { log } from "./log";
 
@@ -32,7 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
     log("no api key found");
     const key = await vscode.window.showInputBox({
       placeHolder: "Enter your Solidtime API key",
-      prompt: "Enter your Solidtime API key",
+      prompt: "Enter your Solidtime API key"
     });
     if (key) {
       apiKey = key;
@@ -78,7 +78,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const config = vscode.workspace.getConfiguration("solidtime", null);
       const key = await vscode.window.showInputBox({
         prompt: "Enter your Solidtime API key",
-        value: apiKey,
+        value: apiKey
       });
       if (key) {
         apiKey = key;
@@ -91,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const config = vscode.workspace.getConfiguration("solidtime", null);
       const url = await vscode.window.showInputBox({
         prompt: "Enter your Solidtime instance API URL",
-        value: apiUrl,
+        value: apiUrl
       });
       if (url) {
         apiUrl = url.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
@@ -102,14 +102,24 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("solidtime.setOrganizationId", async () => {
       const config = vscode.workspace.getConfiguration("solidtime", null);
-      const orgInput = await vscode.window.showInputBox({
-        prompt: "Enter your Organization ID",
-        value: orgId,
-      });
-      if (orgInput) {
-        orgId = orgInput;
-        await config.update("organizationId", orgId, true);
-        log("organization id updated", { orgId });
+      try {
+        const orgs = await getOrganizations(apiKey as string, apiUrl as string);
+        if (!orgs.length) {
+          vscode.window.showErrorMessage("No organizations found");
+          return;
+        }
+        const selected = await vscode.window.showQuickPick(
+          orgs.map(org => ({ label: org.name, description: org.id })),
+          { placeHolder: "Select your Organization" }
+        );
+        if (selected) {
+          orgId = selected.description;
+          await config.update("solidtime.organizationId", orgId, true);
+          log("organization id updated", { orgId });
+        }
+      } catch (error) {
+        vscode.window.showErrorMessage("Failed to fetch organizations");
+        log("get organizations failed", error);
       }
     }),
     vscode.commands.registerCommand("solidtime.refreshMemberId", async () => {

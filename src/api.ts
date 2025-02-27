@@ -28,7 +28,7 @@ export async function sendUpdate(
     billable: false,
     project_id: vscode.workspace.name || null,
     description: "Coding time from VSCode extension",
-    tags: [],
+    tags: []
   };
   log("request", { endpoint, data });
   try {
@@ -36,9 +36,9 @@ export async function sendUpdate(
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify(data)
     });
     const text = await response.text();
     log("response", { status: response.status, body: text });
@@ -67,8 +67,8 @@ export async function getEntries(
     const response = await fetch(endpoint.toString(), {
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
+        Accept: "application/json"
+      }
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
@@ -76,7 +76,7 @@ export async function getEntries(
       id: entry.id,
       start: entry.start,
       duration: entry.duration * 1000,
-      project: entry.project_id || "No project",
+      project: entry.project_id || "No project"
     }));
     log("entries fetched", { count: entries.length });
     return entries;
@@ -96,8 +96,8 @@ export async function getMember(
     const response = await fetch(endpoint, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
+        Accept: "application/json"
+      }
     });
     const text = await response.text();
     log("member response", { status: response.status, body: text.substring(0, 500) });
@@ -110,8 +110,30 @@ export async function getMember(
     log("member fetch failed", {
       message: error instanceof Error ? error.message : "Unknown error",
       endpoint,
-      hasKey: !!apiKey,
+      hasKey: !!apiKey
     });
     throw error;
   }
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+}
+
+export async function getOrganizations(apiKey: string, apiUrl: string): Promise<Organization[]> {
+  const endpoint = `${apiUrl}/api/v1/users/me/memberships`;
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  return data.data.map((membership: any) => ({
+    id: membership.organization.id,
+    name: membership.organization.name,
+  }));
 } 
