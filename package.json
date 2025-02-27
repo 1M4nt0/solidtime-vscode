@@ -1,0 +1,59 @@
+{
+  "name": "solidtime",
+  "displayName": "Solidtime",
+  "publisher": "pandadev",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "solidtime.showTime",
+        "title": "Show Coding Time"
+      },
+      {
+        "command": "solidtime.setApiKey",
+        "title": "Set Solidtime API Key"
+      },
+      {
+        "command": "solidtime.setApiUrl",
+        "title": "Set Solidtime API URL"
+      },
+      {
+        "command": "solidtime.setOrganizationId",
+        "title": "Set Solidtime Organization ID"
+      }
+    ],
+    "configuration": {
+      "title": "Solidtime",
+      "properties": {
+        "solidtime.apiUrl": {
+          "type": "string",
+          "default": "https://app.solidtime.io/",
+          "description": "Base URL for Solidtime API"
+        },
+        "solidtime.organizationId": {
+          "type": "string",
+          "description": "Your Solidtime organization ID"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild ./src/extension.ts --bundle --outdir=dist --external:vscode --format=cjs --platform=node",
+    "watch": "esbuild ./src/extension.ts --bundle --outdir=dist --external:vscode --format=cjs --platform=node --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "@types/vscode": "^1.97.0",
+    "esbuild": "^0.25.0"
+  }
+}
