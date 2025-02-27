@@ -9,21 +9,25 @@ let apiKey: string | undefined;
 let apiUrl: string | undefined;
 let organizationId: string | undefined;
 let memberId: string | undefined;
-const IDLE_LIMIT = 2 * 60 * 1000;
+const IDLE_TIMEOUT = 2 * 60 * 1000; // 2 minutes idle timeout
 let outputChannel: vscode.OutputChannel;
+let lastFile: string;
+let lastHeartbeat: number = 0;
+let dedupe: {[key: string]: {selection: vscode.Position, lastHeartbeatAt: number}} = {};
 
 export async function activate(context: vscode.ExtensionContext) {
   log("Extension activating");
 
-  apiKey = ((context.globalState.get("solidtime.apiKey") as string) || "").trim();
-  apiUrl = ((context.globalState.get("solidtime.apiUrl") as string) || "").trim();
-  organizationId = ((context.globalState.get("solidtime.organizationId") as string) || "").trim();
+  const config = vscode.workspace.getConfiguration('solidtime', null);
+  apiKey = config.get('apiKey') || "";
+  apiUrl = config.get('apiUrl') || "";
+  organizationId = config.get('organizationId') || "";
 
   log("Initial config loaded", { apiKey: !!apiKey, apiUrl, organizationId });
 
   if (apiUrl) {
     apiUrl = apiUrl.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
-    await context.globalState.update("solidtime.apiUrl", apiUrl);
+    await config.update('apiUrl', apiUrl, true);
     log("API URL normalized", { apiUrl });
   }
 
@@ -35,7 +39,7 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     if (key) {
       apiKey = key;
-      await context.globalState.update("solidtime.apiKey", apiKey);
+      await config.update('apiKey', apiKey, true);
       log("API key saved");
     } else {
       log("No API key provided, exiting");
@@ -46,70 +50,95 @@ export async function activate(context: vscode.ExtensionContext) {
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left
   );
-  statusBarItem.text = `$(clock) 0h 0m`;
+  statusBarItem.text = `$(clock) 0 hrs 0 mins`;
   statusBarItem.show();
   startTime = Date.now();
   lastActiveTime = startTime;
   log("Status bar initialized", { startTime });
 
+  // Setup activity tracking
+  vscode.window.onDidChangeTextEditorSelection(onActivity, null, context.subscriptions);
+  vscode.window.onDidChangeActiveTextEditor(onActivity, null, context.subscriptions);
+  vscode.workspace.onDidSaveTextDocument(onActivity, null, context.subscriptions);
+  
   timer = setInterval(async () => {
     const currentTime = Date.now();
-    if (currentTime - lastActiveTime > IDLE_LIMIT) {
+    if (currentTime - lastActiveTime > IDLE_TIMEOUT) {
       log("User idle, skipping update");
       return;
     }
-    totalTime = currentTime - startTime;
-    statusBarItem.text = `$(clock) ${getTimeSpent()}`;
-    log("Updating time", { totalTime, display: getTimeSpent() });
-    try {
-      await sendTimeUpdate(totalTime);
-    } catch (err) {
-      log("Error sending time update", err);
+    
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      const file = editor.document.fileName;
+      const time = Date.now();
+      
+      if (enoughTimePassed(time) || lastFile !== file) {
+        try {
+          await sendTimeUpdate(totalTime);
+          lastFile = file;
+          lastHeartbeat = time;
+        } catch (err) {
+          log("Error sending time update", err);
+        }
+      }
     }
   }, 60000);
 
   context.subscriptions.push(
     vscode.commands.registerCommand("solidtime.setApiKey", async () => {
+      const config = vscode.workspace.getConfiguration('solidtime', null);
       const key = await vscode.window.showInputBox({
         prompt: "Enter your Solidtime API key",
         value: apiKey,
       });
       if (key) {
         apiKey = key;
-        await context.globalState.update("solidtime.apiKey", apiKey);
+        await config.update('apiKey', key, true);
         vscode.window.showInformationMessage("API key updated successfully");
         log("API key updated");
       }
     }),
     vscode.commands.registerCommand("solidtime.setApiUrl", async () => {
+      const config = vscode.workspace.getConfiguration('solidtime', null);
       const url = await vscode.window.showInputBox({
         prompt: "Enter your Solidtime instance API URL",
         value: apiUrl,
       });
       if (url) {
-        apiUrl = url;
-        await context.globalState.update("solidtime.apiUrl", apiUrl);
+        apiUrl = url.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
+        await config.update('apiUrl', apiUrl, true);
         vscode.window.showInformationMessage("API URL updated successfully");
         log("API URL updated", { apiUrl });
       }
     }),
     vscode.commands.registerCommand("solidtime.setOrganizationId", async () => {
+      const config = vscode.workspace.getConfiguration('solidtime', null);
       const orgId = await vscode.window.showInputBox({
         prompt: "Enter your Organization ID",
+        value: organizationId,
       });
       if (orgId) {
         organizationId = orgId;
-        await context.globalState.update("solidtime.organizationId", orgId);
+        await config.update('organizationId', orgId, true);
         log("Organization ID updated", { organizationId });
       }
     }),
-    vscode.commands.registerCommand("solidtime.refreshMemberId", fetchMemberId)
+    vscode.commands.registerCommand("solidtime.refreshMemberId", fetchMemberId),
+    vscode.commands.registerCommand("solidtime.forceTimeUpdate", async () => {
+      try {
+        await sendTimeUpdate(totalTime);
+        vscode.window.showInformationMessage("Time update sent successfully");
+      } catch (err) {
+        vscode.window.showErrorMessage("Failed to send time update");
+        log("Force time update failed", err);
+      }
+    })
   );
 
   vscode.window.onDidChangeWindowState((state) => {
     if (state.focused) {
       lastActiveTime = Date.now();
-      log("Window focused, updating last active time", { lastActiveTime });
     }
   });
 
@@ -146,11 +175,18 @@ async function sendTimeUpdate(time: number): Promise<void> {
     return;
   }
 
+  const formatDate = (date: Date) => {
+    return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  };
+
   const endpoint = `${apiUrl}/api/v1/organizations/${organizationId}/time-entries`;
+  const start = new Date(startTime);
+  const end = new Date(startTime + time);
+  
   const payload = {
     member_id: memberId,
-    start: new Date(startTime).toISOString(),
-    end: new Date(startTime + time).toISOString(),
+    start: formatDate(start),
+    end: formatDate(end),
     billable: false,
     project_id: vscode.workspace.name || null,
     description: "Coding time from VSCode extension",
@@ -179,6 +215,7 @@ async function sendTimeUpdate(time: number): Promise<void> {
     log("Time entry created successfully");
   } catch (err) {
     log("API request failed", err);
+    throw err;
   }
 }
 
@@ -306,4 +343,28 @@ export function deactivate() {
     clearInterval(timer);
     log("Timer cleared");
   }
+}
+
+function onActivity() {
+  lastActiveTime = Date.now();
+}
+
+function enoughTimePassed(time: number): boolean {
+  return lastHeartbeat + 120000 < time; // 2 minute heartbeat threshold
+}
+
+function isDuplicateHeartbeat(file: string, time: number, selection: vscode.Position): boolean {
+  const DUPLICATE_THRESHOLD = 30 * 60000; // 30 minutes
+  
+  if (dedupe[file] && 
+      time - dedupe[file].lastHeartbeatAt < DUPLICATE_THRESHOLD &&
+      dedupe[file].selection.isEqual(selection)) {
+    return true;
+  }
+  
+  dedupe[file] = {
+    selection: selection,
+    lastHeartbeatAt: time
+  };
+  return false;
 }

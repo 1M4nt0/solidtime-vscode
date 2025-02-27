@@ -16,25 +16,29 @@
   "contributes": {
     "commands": [
       {
-        "command": "solidtime.showTime",
-        "title": "Show Coding Time"
-      },
-      {
         "command": "solidtime.setApiKey",
-        "title": "Set Solidtime API Key"
+        "title": "Solidtime: Set API Key"
       },
       {
         "command": "solidtime.setApiUrl",
-        "title": "Set Solidtime API URL"
+        "title": "Solidtime: Set API URL"
       },
       {
         "command": "solidtime.setOrganizationId",
-        "title": "Set Solidtime Organization ID"
+        "title": "Solidtime: Set Organization ID"
+      },
+      {
+        "command": "solidtime.forceTimeUpdate",
+        "title": "Solidtime: Force Time Update"
       }
     ],
     "configuration": {
       "title": "Solidtime",
       "properties": {
+        "solidtime.apiKey": {
+          "type": "string",
+          "description": "Your Solidtime API key"
+        },
         "solidtime.apiUrl": {
           "type": "string",
           "default": "https://app.solidtime.io/",
