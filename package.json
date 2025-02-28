@@ -6,7 +6,7 @@
   "version": "1.0.0",
   "keywords": [
     "vscode",
-    "extension", 
+    "extension",
     "solidtime",
     "api",
     "visualization",
@@ -76,6 +76,10 @@
       {
         "command": "solidtime.dashboard",
         "title": "Solidtime: Open Dashboard"
+      },
+      {
+        "command": "solidtime.showOutput",
+        "title": "Solidtime: Show Output"
       }
     ],
     "configuration": {
