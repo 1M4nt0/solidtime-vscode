@@ -3,7 +3,7 @@
   "displayName": "Solidtime",
   "description": "Automatic time tracking for your coding sessions with detailed analytics and project management.",
   "publisher": "PandaDEV",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "keywords": [
     "vscode",
     "extension",
