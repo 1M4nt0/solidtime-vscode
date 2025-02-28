@@ -44,8 +44,11 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
   }
-  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+  statusBar = vscode.window.createStatusBarItem("solidtime.time", vscode.StatusBarAlignment.Left, 3);
+  statusBar.name = "Solidtime"
   statusBar.text = `$(clock) 0 hrs 0 mins`;
+  statusBar.tooltip = "Solidtime: Today's coding time. Click to visit dashboard.";
+  statusBar.command = 'solidtime.dashboard';
   statusBar.show();
   startTime = Date.now();
   lastActiveTime = startTime;
@@ -171,7 +174,11 @@ export async function activate(context: vscode.ExtensionContext) {
         log("force update failed", error);
       }
     }),
-    vscode.commands.registerCommand("solidtime.setProject", setProject)
+    vscode.commands.registerCommand("solidtime.setProject", setProject),
+    vscode.commands.registerCommand("solidtime.dashboard", () => {
+      const dashboardUrl = `${apiUrl}/dashboard`;
+      vscode.env.openExternal(vscode.Uri.parse(dashboardUrl));
+    })
   );
   vscode.window.onDidChangeWindowState((state) => {
     if (state.focused) {

@@ -72,6 +72,10 @@
       {
         "command": "solidtime.setProject",
         "title": "Solidtime: Set Project"
+      },
+      {
+        "command": "solidtime.dashboard",
+        "title": "Solidtime: Open Dashboard"
       }
     ],
     "configuration": {
