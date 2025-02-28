@@ -15,7 +15,7 @@ let orgId: string | undefined;
 let memberId: string | undefined;
 const IDLE_TIMEOUT = 2 * 60 * 1000;
 let currentFile: string;
-let lastHeartbeat: number = 0;
+let dedupe: {[key: string]: {time: number, file: string}} = {};
 
 export async function activate(context: vscode.ExtensionContext) {
   log("extension activating");
@@ -75,17 +75,21 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const timeElapsed = currentTime - startTime;
-    totalTime = initialTime + timeElapsed;
-
     const editor = vscode.window.activeTextEditor;
     if (editor) {
       const fileName = editor.document.fileName;
-      if (hasTimePassed(lastHeartbeat, currentTime) || currentFile !== fileName) {
+      const timeElapsed = currentTime - startTime;
+      
+      const key = `${fileName}`;
+      if (!dedupe[key] || hasTimePassed(dedupe[key].time, currentTime) || currentFile !== fileName) {
         try {
           await sendUpdate(timeElapsed, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime);
           currentFile = fileName;
-          lastHeartbeat = currentTime;
+          dedupe[key] = {
+            time: currentTime,
+            file: fileName
+          };
+          totalTime = initialTime + timeElapsed;
           statusBar.text = `$(clock) ${formatTimeSpent(totalTime)}`;
           log("time updated", { totalTime, elapsed: timeElapsed });
         } catch (error) {
