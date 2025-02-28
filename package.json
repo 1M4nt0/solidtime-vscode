@@ -1,13 +1,49 @@
 {
   "name": "solidtime",
   "displayName": "Solidtime",
-  "publisher": "pandadev",
-  "version": "0.0.1",
+  "publisher": "PandaDEV",
+  "version": "1.0.0",
+  "keywords": [
+    "vscode",
+    "extension",
+    "solidtime",
+    "api",
+    "visualization",
+    "education",
+    "analytics",
+    "code",
+    "code time",
+    "codetime",
+    "flow",
+    "focus",
+    "metrics",
+    "productivity",
+    "time",
+    "timer",
+    "time tracker",
+    "time tracking",
+    "tracker",
+    "tracking",
+    "worktime"
+  ],
+  "homepage": "https://solidtime.io",
+  "bugs": {
+    "url": "https://github.com/0pandadev/solidtime-vscode/issues",
+    "email": "contact@pandadev.net"
+  },
+  "icon": "images/solidtime-logo.png",
   "engines": {
     "vscode": "^1.93.0"
   },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
   "categories": [
-    "Other"
+    "Visualization",
+    "Education"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -71,7 +107,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/0pandadev/solidtime-extension.git"
+    "url": "https://github.com/0pandadev/solidtime-vscode.git"
   },
   "license": "GPL-3.0"
 }

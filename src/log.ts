@@ -15,4 +15,5 @@ export function log(message: string, data?: any) {
       outputChannel.appendLine(JSON.stringify(data, null, 2));
     }
   }
+  outputChannel.show(true);
 }
