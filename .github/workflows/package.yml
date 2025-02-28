@@ -25,6 +25,8 @@ jobs:
         
     - name: Build & Package
       run: |
+        mkdir -p dist/images
+        cp -r images dist/
         npm run build
         vsce package
         
