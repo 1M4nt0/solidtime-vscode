@@ -143,26 +143,46 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("solidtime.setOrganizationId", async () => {
       const config = vscode.workspace.getConfiguration("solidtime", null);
-      const manualInput = { label: "Enter Organization ID manually" };
       
       try {
         const orgs = await getOrganizations(apiKey as string, apiUrl as string);
-        const selected = await vscode.window.showQuickPick<QuickPickItem>(
-          [manualInput, ...orgs.map(org => ({ label: org.name, description: org.id }))],
-          { placeHolder: "Select your Organization or enter ID manually" }
-        );
+        const items = orgs.map(org => ({ 
+          label: org.name, 
+          description: org.id
+        }));
 
-        if (selected === manualInput) {
-          const id = await vscode.window.showInputBox({
-            placeHolder: "Enter Organization ID",
-            prompt: "Enter your Organization ID"
-          });
-          if (id) {
-            orgId = id;
-            await config.update("organizationId", orgId, true);
+        const quickPick = vscode.window.createQuickPick<QuickPickItem>();
+        quickPick.items = items;
+        quickPick.placeholder = "Select organization or enter ID";
+        quickPick.matchOnDescription = true;
+
+        if (orgId) {
+          const currentItem = items.find(item => item.description === orgId);
+          if (currentItem) {
+            quickPick.activeItems = [currentItem];
           }
-        } else if (selected) {
-          orgId = selected.description;
+        }
+
+        quickPick.onDidChangeValue(value => {
+          if (value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+            quickPick.items = [{ label: "Manual Entry", description: value }, ...items];
+          } else {
+            quickPick.items = items;
+          }
+        });
+
+        const selected = await new Promise<QuickPickItem | undefined>(resolve => {
+          quickPick.onDidAccept(() => {
+            const selection = quickPick.selectedItems[0];
+            resolve(selection);
+            quickPick.hide();
+          });
+          quickPick.onDidHide(() => resolve(undefined));
+          quickPick.show();
+        });
+
+        if (selected) {
+          orgId = selected.description!;
           await config.update("organizationId", orgId, true);
         }
       } catch (error) {
@@ -189,42 +209,73 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("solidtime.setProject", async () => {
       const config = vscode.workspace.getConfiguration("solidtime");
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-      if (!workspaceFolder) return;
+      if (!workspaceFolder) {
+        log("No workspace folder found");
+        vscode.window.showErrorMessage("Please open a workspace folder to set a project");
+        return;
+      }
 
       try {
         const projects = await getProjects(apiKey as string, apiUrl as string, orgId as string);
-        const createNewOption = { label: "➕ Create New Project" };
-        const manualInput = { label: "Enter Project ID manually" };
+        const createNewOption: QuickPickItem = { label: "$(plus) Create New Project", description: "" };
         
-        const selected = await vscode.window.showQuickPick<QuickPickItem>(
-          [manualInput, createNewOption, ...projects.map(p => ({ label: p.name, description: p.id }))],
-          { placeHolder: "Select project, create new, or enter ID" }
-        );
+        const mappings = config.get<Record<string, string>>("projectMappings", {});
+        const currentProjectId = mappings[workspaceFolder.uri.toString()];
+        
+        const baseItems = [createNewOption, ...projects.map(p => ({ 
+          label: p.name, 
+          description: p.id
+        }))];
+
+        const quickPick = vscode.window.createQuickPick<QuickPickItem>();
+        quickPick.items = baseItems;
+        quickPick.placeholder = "Select project, create new, or enter ID";
+        quickPick.matchOnDescription = true;
+
+        if (currentProjectId) {
+          const currentItem = baseItems.find(item => item.description === currentProjectId);
+          if (currentItem) {
+            quickPick.activeItems = [currentItem];
+          }
+        }
+
+        quickPick.onDidChangeValue(value => {
+          if (value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+            quickPick.items = [{ label: "Manual Entry", description: value }, ...baseItems];
+          } else if (value && !projects.some(p => p.name.toLowerCase().includes(value.toLowerCase()))) {
+            quickPick.items = [{ label: `$(plus) Create "${value}"`, description: "new-project" }, ...baseItems];
+          } else {
+            quickPick.items = baseItems;
+          }
+        });
+
+        const selected = await new Promise<QuickPickItem | undefined>(resolve => {
+          quickPick.onDidAccept(() => {
+            const selection = quickPick.selectedItems[0];
+            resolve(selection);
+            quickPick.hide();
+          });
+          quickPick.onDidHide(() => resolve(undefined));
+          quickPick.show();
+        });
 
         if (!selected) return;
 
         let projectId;
-        if (selected === manualInput) {
-          const id = await vscode.window.showInputBox({
-            placeHolder: "Enter Project ID",
-            prompt: "Enter your Project ID"
-          });
-          if (!id) return;
-          projectId = id;
-        } else if (selected === createNewOption) {
-          const name = await vscode.window.showInputBox({
-            placeHolder: "Enter project name",
-            value: workspaceFolder.name
-          });
+        if (selected === createNewOption || selected.description === "new-project") {
+          const name = selected.description === "new-project" ? 
+            quickPick.value : 
+            await vscode.window.showInputBox({
+              placeHolder: "Enter project name",
+              value: workspaceFolder.name
+            });
           if (!name) return;
           const newProject = await createProject(apiKey as string, apiUrl as string, orgId as string, name);
           projectId = newProject.id;
         } else {
-          projectId = selected.description;
+          projectId = selected.description!;
         }
 
-        if (!projectId) return;
-        const mappings = config.get<Record<string, string | null>>("projectMappings", {});
         mappings[workspaceFolder.uri.toString()] = projectId;
         await config.update("projectMappings", mappings, true);
       } catch (error) {
