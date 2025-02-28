@@ -8,6 +8,8 @@ export interface TimeEntry {
   project: string;
 }
 
+let currentEntryId: string | null = null;
+
 export async function sendUpdate(
   time: number,
   apiKey: string,
@@ -18,7 +20,12 @@ export async function sendUpdate(
 ): Promise<void> {
   log("sending update", { time });
   const formatDate = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
-  const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries`;
+  
+  // Get today's entries to calculate total time
+  const entries = await getEntries(apiKey, apiUrl, orgId);
+  const previousTime = entries.reduce((total, entry) => total + entry.duration, 0);
+  const totalTime = previousTime + time;
+  
   const start = new Date(startTime);
   const end = new Date(startTime + time);
   const data = {
@@ -30,8 +37,9 @@ export async function sendUpdate(
     description: "Coding time from VSCode extension",
     tags: []
   };
-  log("request", { endpoint, data });
-  try {
+
+  if (!currentEntryId) {
+    const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries`;
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -41,12 +49,23 @@ export async function sendUpdate(
       body: JSON.stringify(data)
     });
     const text = await response.text();
-    log("response", { status: response.status, body: text });
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
-    log("entry created");
-  } catch (error) {
-    log("request failed", error);
-    throw error;
+    const responseData = JSON.parse(text);
+    currentEntryId = responseData.data.id;
+    log("entry created", { id: currentEntryId, totalTime });
+  } else {
+    const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries/${currentEntryId}`;
+    const response = await fetch(endpoint, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(data)
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
+    log("entry updated", { id: currentEntryId, totalTime });
   }
 }
 

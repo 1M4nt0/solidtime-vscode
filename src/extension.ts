@@ -8,6 +8,7 @@ let timer: NodeJS.Timer | undefined;
 let startTime: number;
 let lastActiveTime: number;
 let totalTime: number = 0;
+let initialTime: number = 0;
 let apiKey: string | undefined;
 let apiUrl: string | undefined;
 let orgId: string | undefined;
@@ -15,7 +16,6 @@ let memberId: string | undefined;
 const IDLE_TIMEOUT = 2 * 60 * 1000;
 let currentFile: string;
 let lastHeartbeat: number = 0;
-let lastUpdateTime: number;
 
 export async function activate(context: vscode.ExtensionContext) {
   log("extension activating");
@@ -49,11 +49,25 @@ export async function activate(context: vscode.ExtensionContext) {
   statusBar.show();
   startTime = Date.now();
   lastActiveTime = startTime;
-  lastUpdateTime = startTime;
   log("status bar initialized", { startTime });
   vscode.window.onDidChangeTextEditorSelection(onActivity, null, context.subscriptions);
   vscode.window.onDidChangeActiveTextEditor(onActivity, null, context.subscriptions);
   vscode.workspace.onDidSaveTextDocument(onActivity, null, context.subscriptions);
+  try {
+    log("fetching today's entries");
+    const entries = await getEntries(apiKey as string, apiUrl as string, orgId as string);
+    initialTime = entries.reduce((total, entry) => total + entry.duration, 0);
+    totalTime = initialTime;
+    statusBar.text = `$(clock) ${formatTimeSpent(totalTime)}`;
+    log("entries loaded", { totalTime, count: entries.length });
+  } catch (error) {
+    log("entries load failed", error);
+  }
+  try {
+    memberId = await getMember(apiKey as string, apiUrl as string, orgId as string);
+  } catch (error) {
+    log("member fetch failed", error);
+  }
   timer = setInterval(async () => {
     const currentTime = Date.now();
     if (currentTime - lastActiveTime > IDLE_TIMEOUT) {
@@ -61,19 +75,19 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const timeElapsed = currentTime - lastUpdateTime;
-    totalTime += timeElapsed;
-    lastUpdateTime = currentTime;
+    const timeElapsed = currentTime - startTime;
+    totalTime = initialTime + timeElapsed;
 
     const editor = vscode.window.activeTextEditor;
     if (editor) {
       const fileName = editor.document.fileName;
       if (hasTimePassed(lastHeartbeat, currentTime) || currentFile !== fileName) {
         try {
-          await sendUpdate(totalTime, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime);
+          await sendUpdate(timeElapsed, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime);
           currentFile = fileName;
           lastHeartbeat = currentTime;
           statusBar.text = `$(clock) ${formatTimeSpent(totalTime)}`;
+          log("time updated", { totalTime, elapsed: timeElapsed });
         } catch (error) {
           log("update failed", error);
         }
@@ -151,20 +165,6 @@ export async function activate(context: vscode.ExtensionContext) {
       lastActiveTime = Date.now();
     }
   });
-  try {
-    log("fetching today's entries");
-    const entries = await getEntries(apiKey as string, apiUrl as string, orgId as string);
-    totalTime = entries.reduce((total, entry) => total + entry.duration, 0);
-    statusBar.text = `$(clock) ${formatTimeSpent(totalTime)}`;
-    log("entries loaded", { totalTime, count: entries.length });
-  } catch (error) {
-    log("entries load failed", error);
-  }
-  try {
-    memberId = await getMember(apiKey as string, apiUrl as string, orgId as string);
-  } catch (error) {
-    log("member fetch failed", error);
-  }
   log("extension activated");
 }
 
