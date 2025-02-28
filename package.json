@@ -38,6 +38,7 @@
   },
   "files": [
     "dist",
+    "images",
     "package.json",
     "README.md",
     "LICENSE"
