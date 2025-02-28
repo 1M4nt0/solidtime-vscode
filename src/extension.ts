@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { sendUpdate, getEntries, getMember, getOrganizations } from "./api";
+import { sendUpdate, getEntries, getMember, getOrganizations, getProjects, createProject } from "./api";
 import { formatTimeSpent, hasTimePassed } from "./time";
 import { log } from "./log";
 
@@ -83,7 +83,15 @@ export async function activate(context: vscode.ExtensionContext) {
       const key = `${fileName}`;
       if (!dedupe[key] || hasTimePassed(dedupe[key].time, currentTime) || currentFile !== fileName) {
         try {
-          await sendUpdate(timeElapsed, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime);
+          const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+          const mappings: { [key: string]: string } = vscode.workspace.getConfiguration("solidtime").get("projectMappings", {});
+          const projectId = workspaceFolder ? mappings[workspaceFolder.uri.toString()] : null;
+
+          const data = {
+            project_id: projectId || null
+          };
+
+          await sendUpdate(timeElapsed, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime, data);
           currentFile = fileName;
           dedupe[key] = {
             time: currentTime,
@@ -156,13 +164,14 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("solidtime.forceTimeUpdate", async () => {
       try {
-        await sendUpdate(totalTime, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime);
+        await sendUpdate(totalTime, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime, { project_id: null });
         vscode.window.showInformationMessage("Time update sent");
       } catch (error) {
         vscode.window.showErrorMessage("Time update failed");
         log("force update failed", error);
       }
-    })
+    }),
+    vscode.commands.registerCommand("solidtime.setProject", setProject)
   );
   vscode.window.onDidChangeWindowState((state) => {
     if (state.focused) {
@@ -182,4 +191,41 @@ export function deactivate() {
 
 function onActivity() {
   lastActiveTime = Date.now();
+}
+
+async function setProject() {
+  const config = vscode.workspace.getConfiguration("solidtime");
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) return;
+
+  try {
+    const projects = await getProjects(apiKey as string, apiUrl as string, orgId as string);
+    const createNewOption = { label: "➕ Create New Project" };
+    const selected = await vscode.window.showQuickPick<vscode.QuickPickItem>(
+      [createNewOption, ...projects.map(p => ({ label: p.name, description: p.id }))],
+      { placeHolder: "Select or create project" }
+    );
+
+    if (!selected) return;
+
+    let projectId;
+    if (selected === createNewOption) {
+      const name = await vscode.window.showInputBox({
+        placeHolder: "Enter project name",
+        value: workspaceFolder.name
+      });
+      if (!name) return;
+      const newProject = await createProject(apiKey as string, apiUrl as string, orgId as string, name);
+      projectId = newProject.id;
+    } else {
+      projectId = selected.description;
+    }
+
+    const mappings: { [key: string]: string } = config.get("projectMappings", {});
+    mappings[workspaceFolder.uri.toString()] = projectId as string;
+    await config.update("projectMappings", mappings, true);
+  } catch (error) {
+    vscode.window.showErrorMessage("Failed to set project");
+    log("project set failed", error);
+  }
 }

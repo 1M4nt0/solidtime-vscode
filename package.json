@@ -30,6 +30,10 @@
       {
         "command": "solidtime.forceTimeUpdate",
         "title": "Solidtime: Force Time Update"
+      },
+      {
+        "command": "solidtime.setProject",
+        "title": "Solidtime: Set Project"
       }
     ],
     "configuration": {
@@ -47,6 +51,11 @@
         "solidtime.organizationId": {
           "type": "string",
           "description": "Your Solidtime organization ID"
+        },
+        "solidtime.projectMappings": {
+          "type": "object",
+          "default": {},
+          "description": "Workspace to Solidtime project mappings"
         }
       }
     }
