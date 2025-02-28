@@ -13,7 +13,7 @@ Solidtime is a VSCode extension that tracks your coding time and sends periodic 
 ## Usage
 
 1. Open the project in VSCode.
-3. Use the command palette to execute any of the following commands:
+2. Use the command palette to execute any of the following commands:
    - **Solidtime: Set API Key**
    - **Solidtime: Set API URL**
    - **Solidtime: Set Organization ID**
@@ -23,7 +23,7 @@ The extension automatically tracks activity and sends time updates in the backgr
 
 ## Development
 
-1. Install Bun (https://bun.sh).
+1. Install Bun ([https://bun.sh](https://bun.sh)).
 2. Clone the repository.
 3. Run `bun install` to install dependencies.
 4. Build the extension with `bun run build`.
