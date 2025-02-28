@@ -87,33 +87,38 @@ export async function getEntries(
 }
 
 export async function getMember(
-  apiKey: string,
-  apiUrl: string
+  apiKey: string, 
+  apiUrl: string,
+  orgId: string
 ): Promise<string> {
+  const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/members`;
+  const response = await fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json"
+    }
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  
+  const userId = await getUserId(apiKey, apiUrl);
+  const member = data.data.find((m: any) => m.user_id === userId);
+  
+  if (!member) throw new Error("Member not found");
+  return member.id;
+}
+
+async function getUserId(apiKey: string, apiUrl: string): Promise<string> {
   const endpoint = `${apiUrl}/api/v1/users/me`;
-  log("fetching member", { url: endpoint, hasKey: !!apiKey });
-  try {
-    const response = await fetch(endpoint, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json"
-      }
-    });
-    const text = await response.text();
-    log("member response", { status: response.status, body: text.substring(0, 500) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
-    const data = JSON.parse(text);
-    const memberId = data.data.id;
-    log("member fetched", { memberId });
-    return memberId;
-  } catch (error) {
-    log("member fetch failed", {
-      message: error instanceof Error ? error.message : "Unknown error",
-      endpoint,
-      hasKey: !!apiKey
-    });
-    throw error;
-  }
+  const response = await fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json"
+    }
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  return data.data.id;
 }
 
 export interface Organization {

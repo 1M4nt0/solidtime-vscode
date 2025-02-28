@@ -25,7 +25,7 @@
       },
       {
         "command": "solidtime.setOrganizationId",
-        "title": "Solidtime: Set Organization ID"
+        "title": "Solidtime: Set Organization"
       },
       {
         "command": "solidtime.forceTimeUpdate",

@@ -4,7 +4,7 @@ import { formatTimeSpent, hasTimePassed } from "./time";
 import { log } from "./log";
 
 let statusBar: vscode.StatusBarItem;
-let timer: NodeJS.Timeout;
+let timer: NodeJS.Timer | undefined;
 let startTime: number;
 let lastActiveTime: number;
 let totalTime: number = 0;
@@ -15,6 +15,7 @@ let memberId: string | undefined;
 const IDLE_TIMEOUT = 2 * 60 * 1000;
 let currentFile: string;
 let lastHeartbeat: number = 0;
+let lastUpdateTime: number;
 
 export async function activate(context: vscode.ExtensionContext) {
   log("extension activating");
@@ -48,6 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
   statusBar.show();
   startTime = Date.now();
   lastActiveTime = startTime;
+  lastUpdateTime = startTime;
   log("status bar initialized", { startTime });
   vscode.window.onDidChangeTextEditorSelection(onActivity, null, context.subscriptions);
   vscode.window.onDidChangeActiveTextEditor(onActivity, null, context.subscriptions);
@@ -58,15 +60,20 @@ export async function activate(context: vscode.ExtensionContext) {
       log("user idle");
       return;
     }
+
+    const timeElapsed = currentTime - lastUpdateTime;
+    totalTime += timeElapsed;
+    lastUpdateTime = currentTime;
+
     const editor = vscode.window.activeTextEditor;
     if (editor) {
       const fileName = editor.document.fileName;
-      const time = Date.now();
-      if (hasTimePassed(lastHeartbeat, time) || currentFile !== fileName) {
+      if (hasTimePassed(lastHeartbeat, currentTime) || currentFile !== fileName) {
         try {
           await sendUpdate(totalTime, apiKey as string, apiUrl as string, orgId as string, memberId as string, startTime);
           currentFile = fileName;
-          lastHeartbeat = time;
+          lastHeartbeat = currentTime;
+          statusBar.text = `$(clock) ${formatTimeSpent(totalTime)}`;
         } catch (error) {
           log("update failed", error);
         }
@@ -124,7 +131,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("solidtime.refreshMemberId", async () => {
       try {
-        memberId = await getMember(apiKey as string, apiUrl as string);
+        memberId = await getMember(apiKey as string, apiUrl as string, orgId as string);
       } catch (error) {
         log("member refresh failed", error);
       }
@@ -154,7 +161,7 @@ export async function activate(context: vscode.ExtensionContext) {
     log("entries load failed", error);
   }
   try {
-    memberId = await getMember(apiKey as string, apiUrl as string);
+    memberId = await getMember(apiKey as string, apiUrl as string, orgId as string);
   } catch (error) {
     log("member fetch failed", error);
   }
