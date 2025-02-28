@@ -4,7 +4,7 @@ import { formatTimeSpent, hasTimePassed } from "./time";
 import { log } from "./log";
 
 let statusBar: vscode.StatusBarItem;
-let timer: NodeJS.Timer;
+let timer: NodeJS.Timeout;
 let startTime: number;
 let lastActiveTime: number;
 let totalTime: number = 0;
@@ -44,7 +44,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   }
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
-  statusBar.text = `$(clock) 0h 0m`;
+  statusBar.text = `$(clock) 0 hrs 0 mins`;
   statusBar.show();
   startTime = Date.now();
   lastActiveTime = startTime;
@@ -114,7 +114,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         if (selected) {
           orgId = selected.description;
-          await config.update("solidtime.organizationId", orgId, true);
+          await config.update("organizationId", orgId, true);
           log("organization id updated", { orgId });
         }
       } catch (error) {
