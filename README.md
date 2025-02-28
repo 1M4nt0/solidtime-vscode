@@ -5,10 +5,9 @@ This is the official VSCode extension for [Solidtime](https://solidtime.io), a p
 ## Features
 
 - Tracks time spent coding and syncs with your Solidtime account
-- Automatically sends time updates when a file change is detected or after a set interval
-- Pauses tracking after 2 minutes of inactivity
 - Provides commands to set and update your API key, API URL, and organization ID
-- Manual trigger for time updates
+- Project-based time tracking with workspace mappings
+- Display today's coding time in the status bar
 
 ## Usage
 
