@@ -5,10 +5,6 @@ import { TimeTracker } from "./tracker";
 import { registerCommands } from "./commands";
 
 let timeTracker: TimeTracker;
-let apiKey: string = "";
-let apiUrl: string = "";
-let orgId: string = "";
-let memberId: string = "";
 let startTime: number;
 let totalTime: number = 0;
 let isVSCodeFocused: boolean = true;
@@ -18,16 +14,17 @@ export async function activate(context: vscode.ExtensionContext) {
   log("extension activating");
 
   const config = vscode.workspace.getConfiguration("solidtime", null);
-  apiKey = config.get("apiKey") || "";
-  apiUrl = config.get("apiUrl") || "";
-  orgId = config.get("organizationId") || "";
+  let apiKey = config.get<string>("apiKey") || "";
+  let apiUrl = config.get<string>("apiUrl") || "";
+  let orgId = config.get<string>("organizationId") || "";
+  let memberId = "";
 
-  log("initial config", { hasKey: !!apiKey, apiUrl, orgId });
+  log(`initial config: apiKey exists: ${!!apiKey}, apiUrl: ${apiUrl}, orgId: ${orgId}`);
 
   if (apiUrl) {
     apiUrl = apiUrl.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
     await config.update("apiUrl", apiUrl, true);
-    log("api url normalized", { apiUrl });
+    log(`api url normalized to ${apiUrl}`);
   }
 
   if (!apiKey) {
@@ -49,13 +46,11 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     memberId = await getMember(apiKey, apiUrl, orgId);
   } catch (error) {
-    log("member fetch failed", error);
+    log(`member fetch failed: ${error}`);
   }
 
   startTime = Date.now();
-  log("session started", {
-    sessionStartTime: new Date(startTime).toISOString(),
-  });
+  log(`session started at ${new Date(startTime).toISOString()}`);
 
   timeTracker = new TimeTracker(apiKey, apiUrl, orgId, memberId, startTime);
   lastCodingActivity = startTime;
@@ -72,12 +67,17 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   vscode.workspace.onDidChangeTextDocument(
-    () => debouncedActivity(),
+    debouncedActivity,
     null,
     context.subscriptions
   );
   vscode.window.onDidChangeTextEditorSelection(
-    () => debouncedActivity(),
+    debouncedActivity,
+    null,
+    context.subscriptions
+  );
+  vscode.window.onDidChangeActiveTextEditor(
+    debouncedActivity,
     null,
     context.subscriptions
   );
@@ -85,13 +85,7 @@ export async function activate(context: vscode.ExtensionContext) {
   vscode.window.onDidChangeWindowState(
     (state) => {
       isVSCodeFocused = state.focused;
-      if (state.focused) {
-        timeTracker.updateFocusState(true);
-        log("vscode gained focus");
-      } else {
-        timeTracker.updateFocusState(false);
-        log("vscode lost focus");
-      }
+      timeTracker.updateFocusState(state.focused);
     },
     null,
     context.subscriptions
@@ -106,13 +100,11 @@ export async function activate(context: vscode.ExtensionContext) {
     );
     totalTime = initialTime;
     timeTracker.setInitialTime(initialTime);
-    const initialTimeSeconds = Math.floor(initialTime / 1000);
-    log("entries loaded", {
-      totalTime: `${initialTimeSeconds}s`,
-      count: entries.length,
-    });
+    log(`entries loaded: ${Math.floor(initialTime / 1000)}s from ${entries.length} entries`);
+    
+    await timeTracker.forceUpdate();
   } catch (error) {
-    log("entries load failed", error);
+    log(`entries load failed: ${error}`);
   }
 
   timeTracker.startTracking(
