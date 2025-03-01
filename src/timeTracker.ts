@@ -6,6 +6,7 @@ import { log } from "./log";
 export class TimeTracker {
   private statusBar: vscode.StatusBarItem;
   private timer: NodeJS.Timeout | undefined;
+  private sessionStartTime: number;
   private startTime: number;
   private lastActiveTime: number;
   private totalTime: number = 0;
@@ -19,7 +20,8 @@ export class TimeTracker {
     private apiKey: string,
     private apiUrl: string,
     private orgId: string,
-    private memberId: string
+    private memberId: string,
+    sessionStart: number
   ) {
     this.statusBar = vscode.window.createStatusBarItem(
       "solidtime.time",
@@ -32,6 +34,7 @@ export class TimeTracker {
       "Solidtime: Today's coding time. Click to visit dashboard.";
     this.statusBar.command = "solidtime.dashboard";
     this.statusBar.show();
+    this.sessionStartTime = sessionStart;
     this.startTime = Date.now();
     this.lastActiveTime = this.startTime;
     const startTimeSeconds = Math.floor(this.startTime / 1000);
@@ -134,7 +137,7 @@ export class TimeTracker {
               this.apiUrl,
               this.orgId,
               this.memberId,
-              this.startTime,
+              this.sessionStartTime,
               data
             );
             this.currentFile = fileName;

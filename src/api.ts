@@ -22,17 +22,15 @@ export async function sendUpdate(
   const formatDate = (date: Date) =>
     date.toISOString().replace(/\.\d{3}Z$/, "Z");
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const start = new Date(today);
-  const millisecondsInDay = time;
-  const end = new Date(today.getTime() + millisecondsInDay);
-
+  const start = new Date(startTime);
+  const durationSeconds = Math.floor(time / 1000);
+  const end = new Date(startTime + (durationSeconds * 1000));
+  
   const formattedData = {
     member_id: memberId,
     start: formatDate(start),
     end: formatDate(end),
-    duration: Math.floor(time / 1000),
+    duration: durationSeconds,
     billable: false,
     project_id: data.project_id,
     description: "Coding time from VSCode extension",

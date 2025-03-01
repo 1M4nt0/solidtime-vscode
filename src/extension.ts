@@ -56,9 +56,12 @@ export async function activate(context: vscode.ExtensionContext) {
     log("member fetch failed", error);
   }
 
-  // Initialize time tracker
-  timeTracker = new TimeTracker(apiKey, apiUrl, orgId, memberId);
+  // Set the real session start time
   startTime = Date.now();
+  log("session started", { sessionStartTime: new Date(startTime).toISOString() });
+  
+  // Initialize time tracker with the session start time
+  timeTracker = new TimeTracker(apiKey, apiUrl, orgId, memberId, startTime);
   lastCodingActivity = startTime;
 
   // Set up activity listeners for actual coding activities
