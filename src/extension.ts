@@ -74,8 +74,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activityTimeout = setTimeout(() => {
       lastCodingActivity = Date.now();
       timeTracker.onActivity();
-      activityTimeout = null;
-    }, 1000); // Debounce for 1 second
+    }, 1000) as unknown as NodeJS.Timeout;
   };
 
   vscode.workspace.onDidChangeTextDocument(
