@@ -18,20 +18,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           registry-url: 'https://registry.npmjs.org'
       
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
+          npm install -g @vscode/vsce
       
-      - name: Build
-        run: npm run build
-      
-      - name: Package Extension
-        run: npx @vscode/vsce package --allow-unused-files-patterns
+      - name: Build & Package
+        run: |
+          npm run build
+          vsce package
       
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }} --allow-unused-files-patterns
+        run: vsce publish -p ${{ secrets.VSCE_PAT }}
       
       - name: Publish to Open VSX Registry
         run: npx ovsx publish -p ${{ secrets.OVSX_PAT }}
