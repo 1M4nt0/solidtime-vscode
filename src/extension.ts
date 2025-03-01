@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { getEntries, getMember } from "./api";
 import { log } from "./log";
-import { TimeTracker } from "./timeTracker";
+import { TimeTracker } from "./tracker";
 import { registerCommands } from "./commands";
 
 let timeTracker: TimeTracker;
@@ -17,7 +17,6 @@ let lastCodingActivity: number = Date.now();
 export async function activate(context: vscode.ExtensionContext) {
   log("extension activating");
 
-  // Load configuration
   const config = vscode.workspace.getConfiguration("solidtime", null);
   apiKey = config.get("apiKey") || "";
   apiUrl = config.get("apiUrl") || "";
@@ -25,14 +24,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   log("initial config", { hasKey: !!apiKey, apiUrl, orgId });
 
-  // Normalize API URL
   if (apiUrl) {
     apiUrl = apiUrl.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
     await config.update("apiUrl", apiUrl, true);
     log("api url normalized", { apiUrl });
   }
 
-  // Prompt for API key if not set
   if (!apiKey) {
     log("no api key found");
     const key = await vscode.window.showInputBox({
@@ -49,23 +46,20 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  // Get member ID
   try {
     memberId = await getMember(apiKey, apiUrl, orgId);
   } catch (error) {
     log("member fetch failed", error);
   }
 
-  // Set the real session start time
   startTime = Date.now();
-  log("session started", { sessionStartTime: new Date(startTime).toISOString() });
-  
-  // Initialize time tracker with the session start time
+  log("session started", {
+    sessionStartTime: new Date(startTime).toISOString(),
+  });
+
   timeTracker = new TimeTracker(apiKey, apiUrl, orgId, memberId, startTime);
   lastCodingActivity = startTime;
 
-  // Set up activity listeners for actual coding activities
-  // Use a debounced version of onCodingActivity to prevent excessive updates
   let activityTimeout: NodeJS.Timeout | null = null;
   const debouncedActivity = () => {
     if (activityTimeout) {
@@ -88,12 +82,10 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions
   );
 
-  // Set up window focus listener
   vscode.window.onDidChangeWindowState(
     (state) => {
       isVSCodeFocused = state.focused;
       if (state.focused) {
-        // Just update VSCode focus state, but don't count as coding activity
         timeTracker.updateFocusState(true);
         log("vscode gained focus");
       } else {
@@ -105,7 +97,6 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions
   );
 
-  // Load initial time from today's entries
   try {
     log("fetching today's entries");
     const entries = await getEntries(apiKey, apiUrl, orgId);
@@ -124,14 +115,12 @@ export async function activate(context: vscode.ExtensionContext) {
     log("entries load failed", error);
   }
 
-  // Start tracking time
   timeTracker.startTracking(
     context,
     () => isVSCodeFocused,
     () => lastCodingActivity
   );
 
-  // Register commands
   registerCommands(
     context,
     timeTracker,

@@ -24,8 +24,8 @@ export async function sendUpdate(
 
   const start = new Date(startTime);
   const durationSeconds = Math.floor(time / 1000);
-  const end = new Date(startTime + (durationSeconds * 1000));
-  
+  const end = new Date(startTime + durationSeconds * 1000);
+
   const formattedData = {
     member_id: memberId,
     start: formatDate(start),

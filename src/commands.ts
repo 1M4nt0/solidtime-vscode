@@ -8,7 +8,7 @@ import {
   sendUpdate,
 } from "./api";
 import { log, outputChannel } from "./log";
-import { TimeTracker } from "./timeTracker";
+import { TimeTracker } from "./tracker";
 
 interface QuickPickItem extends vscode.QuickPickItem {
   label: string;
@@ -240,9 +240,9 @@ export function registerCommands(
             selected.description === "new-project"
               ? quickPick.value
               : await vscode.window.showInputBox({
-                  placeHolder: "Enter project name",
-                  value: workspaceFolder.name,
-                });
+                placeHolder: "Enter project name",
+                value: workspaceFolder.name,
+              });
           if (!name) return;
           const newProject = await createProject(apiKey, apiUrl, orgId, name);
           projectId = newProject.id;

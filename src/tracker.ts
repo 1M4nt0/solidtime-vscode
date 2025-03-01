@@ -5,7 +5,7 @@ import { log } from "./log";
 
 export class TimeTracker {
   private statusBar: vscode.StatusBarItem;
-  private timer: NodeJS.Timeout | undefined;
+  private timer: NodeJS.Timer | undefined;
   private sessionStartTime: number;
   private startTime: number;
   private lastActiveTime: number;
@@ -88,7 +88,7 @@ export class TimeTracker {
         wasIdle = false;
 
         this.startTime = currentTime;
-        
+
         skipNextUpdate = true;
         return;
       }
