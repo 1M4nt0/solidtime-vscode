@@ -5,5 +5,5 @@ export function formatTimeSpent(totalTime: number): string {
 }
 
 export function hasTimePassed(lastTime: number, currentTime: number): boolean {
-  return lastTime + 120000 < currentTime;
+  return lastTime + 30000 < currentTime;
 }

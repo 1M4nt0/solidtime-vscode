@@ -19,22 +19,24 @@ export async function sendUpdate(
   data: { project_id: string | null }
 ): Promise<void> {
   log("sending update", { time });
-  const formatDate = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
-  
-  const entries = await getEntries(apiKey, apiUrl, orgId);
-  const previousTime = entries.reduce((total, entry) => total + entry.duration, 0);
-  const totalTime = previousTime + time;
-  
-  const start = new Date(startTime);
-  const end = new Date(startTime + time);
+  const formatDate = (date: Date) =>
+    date.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  const millisecondsInDay = time;
+  const end = new Date(today.getTime() + millisecondsInDay);
+
   const formattedData = {
     member_id: memberId,
     start: formatDate(start),
     end: formatDate(end),
+    duration: Math.floor(time / 1000),
     billable: false,
     project_id: data.project_id,
     description: "Coding time from VSCode extension",
-    tags: []
+    tags: [],
   };
 
   if (!currentEntryId) {
@@ -43,28 +45,28 @@ export async function sendUpdate(
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(formattedData)
+      body: JSON.stringify(formattedData),
     });
     const text = await response.text();
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
     const responseData = JSON.parse(text);
     currentEntryId = responseData.data.id;
-    log("entry created", { id: currentEntryId, totalTime });
+    log("entry created", { id: currentEntryId, totalTime: time });
   } else {
     const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries/${currentEntryId}`;
     const response = await fetch(endpoint, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(formattedData)
+      body: JSON.stringify(formattedData),
     });
     const text = await response.text();
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
-    log("entry updated", { id: currentEntryId, totalTime });
+    log("entry updated", { id: currentEntryId, totalTime: time });
   }
 }
 
@@ -77,7 +79,9 @@ export async function getEntries(
   const today = new Date().toISOString().split("T")[0];
   const start = today + "T00:00:00Z";
   const end = today + "T23:59:59Z";
-  const endpoint = new URL(`${apiUrl}/api/v1/organizations/${orgId}/time-entries`);
+  const endpoint = new URL(
+    `${apiUrl}/api/v1/organizations/${orgId}/time-entries`
+  );
   endpoint.searchParams.set("start", start);
   endpoint.searchParams.set("end", end);
   log("fetching data", { url: endpoint.toString() });
@@ -85,8 +89,8 @@ export async function getEntries(
     const response = await fetch(endpoint.toString(), {
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json"
-      }
+        Accept: "application/json",
+      },
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
@@ -94,7 +98,7 @@ export async function getEntries(
       id: entry.id,
       start: entry.start,
       duration: entry.duration * 1000,
-      project: entry.project_id || "No project"
+      project: entry.project_id || "No project",
     }));
     log("entries fetched", { count: entries.length });
     return entries;
@@ -105,7 +109,7 @@ export async function getEntries(
 }
 
 export async function getMember(
-  apiKey: string, 
+  apiKey: string,
   apiUrl: string,
   orgId: string
 ): Promise<string> {
@@ -113,15 +117,15 @@ export async function getMember(
   const response = await fetch(endpoint, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json"
-    }
+      Accept: "application/json",
+    },
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const data = await response.json();
-  
+
   const userId = await getUserId(apiKey, apiUrl);
   const member = data.data.find((m: any) => m.user_id === userId);
-  
+
   if (!member) throw new Error("Member not found");
   return member.id;
 }
@@ -131,8 +135,8 @@ async function getUserId(apiKey: string, apiUrl: string): Promise<string> {
   const response = await fetch(endpoint, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json"
-    }
+      Accept: "application/json",
+    },
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const data = await response.json();
@@ -144,13 +148,16 @@ export interface Organization {
   name: string;
 }
 
-export async function getOrganizations(apiKey: string, apiUrl: string): Promise<Organization[]> {
+export async function getOrganizations(
+  apiKey: string,
+  apiUrl: string
+): Promise<Organization[]> {
   const endpoint = `${apiUrl}/api/v1/users/me/memberships`;
   const response = await fetch(endpoint, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
+      Authorization: `Bearer ${apiKey}`,
     },
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -166,43 +173,52 @@ export interface Project {
   name: string;
 }
 
-export async function getProjects(apiKey: string, apiUrl: string, orgId: string): Promise<Project[]> {
+export async function getProjects(
+  apiKey: string,
+  apiUrl: string,
+  orgId: string
+): Promise<Project[]> {
   const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/projects`;
   const response = await fetch(endpoint, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json"
-    }
+      Accept: "application/json",
+    },
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const data = await response.json();
   return data.data.map((project: any) => ({
     id: project.id,
-    name: project.name
+    name: project.name,
   }));
 }
 
-export async function createProject(apiKey: string, apiUrl: string, orgId: string, name: string): Promise<Project> {
+export async function createProject(
+  apiKey: string,
+  apiUrl: string,
+  orgId: string,
+  name: string
+): Promise<Project> {
   const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/projects`;
   const userId = await getUserId(apiKey, apiUrl);
-  
+
   const response = await fetch(endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       name,
-      color: '#000000',
+      color: "#000000",
       is_billable: true,
-      member_ids: [userId]
-    })
+      member_ids: [userId],
+    }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const data = await response.json();
   return {
     id: data.data.id,
-    name: data.data.name
+    name: data.data.name,
   };
-} 
+}
