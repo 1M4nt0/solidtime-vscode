@@ -19,7 +19,9 @@ export async function activate(context: vscode.ExtensionContext) {
   let orgId = config.get<string>("organizationId") || "";
   let memberId = "";
 
-  log(`initial config: apiKey exists: ${!!apiKey}, apiUrl: ${apiUrl}, orgId: ${orgId}`);
+  log(
+    `initial config: apiKey exists: ${!!apiKey}, apiUrl: ${apiUrl}, orgId: ${orgId}`
+  );
 
   if (apiUrl) {
     apiUrl = apiUrl.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
@@ -94,14 +96,29 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     log("fetching today's entries");
     const entries = await getEntries(apiKey, apiUrl, orgId);
-    const initialTime = entries.reduce(
+
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const mappings = config.get<Record<string, string | null>>(
+      "projectMappings",
+      {}
+    );
+    const currentProjectId = workspaceFolder
+      ? mappings[workspaceFolder.uri.toString()]
+      : null;
+
+    log(`current project id at startup: ${currentProjectId || "No project"}`);
+
+    const totalDailyTime = entries.reduce(
       (total, entry) => total + entry.duration,
       0
     );
-    totalTime = initialTime;
-    timeTracker.setInitialTime(initialTime);
-    log(`entries loaded: ${Math.floor(initialTime / 1000)}s from ${entries.length} entries`);
-    
+
+    log(`total daily time: ${Math.floor(totalDailyTime / 1000)}s across all projects`);
+
+    totalTime = totalDailyTime;
+    timeTracker.setInitialTime(totalDailyTime);
+    log(`entries loaded: ${Math.floor(totalDailyTime / 1000)}s total from ${entries.length} entries`);
+
     await timeTracker.forceUpdate();
   } catch (error) {
     log(`entries load failed: ${error}`);

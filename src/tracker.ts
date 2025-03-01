@@ -5,7 +5,7 @@ import { log } from "./log";
 
 export class TimeTracker {
   private statusBar: vscode.StatusBarItem;
-  private timer: NodeJS.Timer | undefined;
+  private timer: NodeJS.Timeout | undefined;
   private sessionStartTime: number;
   private startTime: number;
   private totalTime: number = 0;
@@ -16,6 +16,9 @@ export class TimeTracker {
   private readonly UPDATE_INTERVAL = 2 * 60 * 1000;
   private readonly MAX_UPDATE_FREQUENCY = 30 * 1000;
   private isVSCodeFocused: boolean = true;
+  private lastProjectId: string | null = null;
+  private projectSessionTimes: Record<string, number> = {};
+  private projectTime: number = 0;
 
   constructor(
     private apiKey: string,
@@ -38,13 +41,44 @@ export class TimeTracker {
     this.sessionStartTime = sessionStart;
     this.startTime = Date.now();
     this.lastUpdate = this.startTime;
-    log(`status bar initialized, start time: ${new Date(this.startTime).toISOString()}`);
+    log(
+      `status bar initialized, start time: ${new Date(
+        this.startTime
+      ).toISOString()}`
+    );
+  }
+
+  private getCurrentProjectId(): string | null {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const config = vscode.workspace.getConfiguration("solidtime", null);
+    const mappings = config.get<Record<string, string | null>>(
+      "projectMappings",
+      {}
+    );
+    return workspaceFolder ? mappings[workspaceFolder.uri.toString()] : null;
+  }
+
+  private getProjectKey(projectId: string | null): string {
+    return projectId || "No project";
+  }
+
+  private getProjectSessionTime(projectId: string | null): number {
+    const key = this.getProjectKey(projectId);
+    if (!this.projectSessionTimes[key]) {
+      this.projectSessionTimes[key] = Date.now();
+      log(
+        `New project session started for ${key} at ${new Date(
+          this.projectSessionTimes[key]
+        ).toISOString()}`
+      );
+    }
+    return this.projectSessionTimes[key];
   }
 
   public setInitialTime(time: number): void {
-    this.initialTime = time;
     this.totalTime = time;
     this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
+    log(`Initial total time set to ${Math.floor(time/1000)}s`);
   }
 
   public onActivity(): void {
@@ -71,18 +105,57 @@ export class TimeTracker {
     try {
       log("refreshing time entries on focus");
       const entries = await getEntries(this.apiKey, this.apiUrl, this.orgId);
+
+      const projectId = this.getCurrentProjectId();
+      const projectKey = this.getProjectKey(projectId);
+
+      if (this.lastProjectId !== projectId) {
+        log(
+          `Project switched from ${this.getProjectKey(
+            this.lastProjectId
+          )} to ${projectKey}`
+        );
+        this.startTime = Date.now();
+        this.lastProjectId = projectId;
+      }
+
+      log(`current project id: ${projectKey}`);
+
+      const projectEntries = entries.filter((entry) => {
+        const entryProject = entry.project || "No project";
+        const matches = entryProject === projectKey;
+        return matches;
+      });
+
+      const projectTime = projectEntries.reduce(
+        (total, entry) => total + entry.duration,
+        0
+      );
+
       const totalTime = entries.reduce(
         (total, entry) => total + entry.duration,
         0
       );
 
-      if (totalTime > this.totalTime) {
-        this.initialTime = totalTime;
-        this.totalTime = totalTime;
-        this.startTime = Date.now();
-        this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
-        log(`time entries refreshed: ${Math.floor(totalTime / 1000)}s from ${entries.length} entries`);
-      }
+      log(
+        `refreshing to ${Math.floor(
+          totalTime / 1000
+        )}s total, with ${Math.floor(projectTime / 1000)}s from current project`
+      );
+
+      this.projectTime = projectTime;
+      this.startTime = Date.now();
+      this.totalTime = totalTime;
+      this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
+      log(
+        `time entries refreshed: total ${Math.floor(
+          totalTime / 1000
+        )}s across all projects, ${Math.floor(
+          projectTime / 1000
+        )}s for current project`
+      );
+
+      this.getProjectSessionTime(projectId);
     } catch (error) {
       log(`refresh time entries failed: ${error}`);
     }
@@ -95,29 +168,37 @@ export class TimeTracker {
   ): void {
     let wasIdle = false;
     let idleStartTime = 0;
+    let lastTimerUpdate = Date.now();
 
     this.timer = setInterval(async () => {
       const currentTime = Date.now();
       const timeSinceLastCoding = currentTime - getLastCodingActivity();
+      const timeSinceLastUpdate = currentTime - lastTimerUpdate;
+      
+      lastTimerUpdate = currentTime;
 
       const isIdle = timeSinceLastCoding > this.IDLE_TIMEOUT || !isFocused();
 
       if (isIdle && !wasIdle) {
         idleStartTime = currentTime;
-        log(`user became idle: idle for ${Math.floor(timeSinceLastCoding / 1000)}s, vscode in focus: ${isFocused()}`);
+        log(
+          `user became idle: idle for ${Math.floor(
+            timeSinceLastCoding / 1000
+          )}s, vscode in focus: ${isFocused()}`
+        );
 
-        this.initialTime = this.totalTime;
         await this.sendTimeUpdate();
-        this.startTime = currentTime;
         wasIdle = true;
         return;
       } else if (!isIdle && wasIdle) {
         const totalIdleTime = currentTime - idleStartTime;
-        log(`user became active after ${Math.floor(totalIdleTime / 1000)}s of idle time`);
+        log(
+          `user became active after ${Math.floor(
+            totalIdleTime / 1000
+          )}s of idle time`
+        );
         wasIdle = false;
-
         this.startTime = currentTime;
-
         this.sendTimeUpdate();
         return;
       }
@@ -126,8 +207,8 @@ export class TimeTracker {
         return;
       }
 
-      const timeElapsed = currentTime - this.startTime;
-      this.totalTime = this.initialTime + timeElapsed;
+      // Only increment time when active (not idle)
+      this.totalTime += timeSinceLastUpdate;
       this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
 
       const editor = vscode.window.activeTextEditor;
@@ -147,7 +228,9 @@ export class TimeTracker {
       dispose: () => {
         if (this.timer) {
           clearInterval(this.timer);
-          log(`timer cleared, total time: ${Math.floor(this.totalTime / 1000)}s`);
+          log(
+            `timer cleared, total time: ${Math.floor(this.totalTime / 1000)}s`
+          );
         }
       },
     });
@@ -156,23 +239,37 @@ export class TimeTracker {
   private async sendTimeUpdate(fileName?: string): Promise<void> {
     try {
       const currentTime = Date.now();
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-      const config = vscode.workspace.getConfiguration("solidtime", null);
-      const mappings = config.get<Record<string, string | null>>(
-        "projectMappings",
-        {}
-      );
-      const projectId = workspaceFolder
-        ? mappings[workspaceFolder.uri.toString()]
-        : null;
+      const projectId = this.getCurrentProjectId();
+      const projectKey = this.getProjectKey(projectId);
+
+      if (this.lastProjectId !== projectId) {
+        this.startTime = Date.now();
+        if (this.lastProjectId !== null) {
+          log(
+            `Project changed from ${this.getProjectKey(
+              this.lastProjectId
+            )} to ${projectKey}`
+          );
+        }
+        this.lastProjectId = projectId;
+        await this.refreshTimeEntries();
+        return;
+      }
+
+      log(`sending update for project: ${projectKey}`);
+
+      const projectSessionTime = this.getProjectSessionTime(projectId);
+
+      const timeElapsed = currentTime - this.startTime;
+      const projectTotalTime = this.projectTime + timeElapsed;
 
       await sendUpdate(
-        this.totalTime,
+        projectTotalTime,
         this.apiKey,
         this.apiUrl,
         this.orgId,
         this.memberId,
-        this.sessionStartTime,
+        projectSessionTime,
         { project_id: projectId || null }
       );
 
@@ -181,10 +278,12 @@ export class TimeTracker {
       }
       this.lastUpdate = currentTime;
 
-      const timeElapsed = currentTime - this.startTime;
       const timeElapsedSeconds = Math.floor(timeElapsed / 1000);
-      const totalTimeSeconds = Math.floor(this.totalTime / 1000);
-      log(`time updated: total ${totalTimeSeconds}s, elapsed ${timeElapsedSeconds}s`);
+      const projectTotalSeconds = Math.floor(projectTotalTime / 1000);
+      const totalSeconds = Math.floor(this.totalTime / 1000);
+      log(
+        `time updated: total (all projects) ${totalSeconds}s, current project ${projectTotalSeconds}s, elapsed ${timeElapsedSeconds}s for project ${projectKey}`
+      );
     } catch (error) {
       log(`update failed: ${error}`);
     }

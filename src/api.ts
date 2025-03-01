@@ -7,7 +7,7 @@ export interface TimeEntry {
   project: string;
 }
 
-let currentEntryId: string | null = null;
+let currentEntryIds: Record<string, string> = {};
 let cachedUserId: string | null = null;
 
 async function apiFetch<T>(
@@ -53,7 +53,12 @@ export async function sendUpdate(
   startTime: number,
   data: { project_id: string | null }
 ): Promise<void> {
-  log(`sending update for ${Math.floor(time / 1000)}s of time`);
+  const projectKey = data.project_id || "no_project";
+  log(
+    `sending update for ${Math.floor(
+      time / 1000
+    )}s of time for project ${projectKey}`
+  );
 
   const start = new Date(startTime);
   const durationSeconds = Math.floor(time / 1000);
@@ -71,7 +76,7 @@ export async function sendUpdate(
   };
 
   try {
-    if (!currentEntryId) {
+    if (!currentEntryIds[projectKey]) {
       const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries`;
       const response = await apiFetch<{ data: { id: string } }>(
         endpoint,
@@ -79,12 +84,21 @@ export async function sendUpdate(
         "POST",
         formattedData
       );
-      currentEntryId = response.data.id;
-      log(`entry created with id ${currentEntryId}, total time: ${Math.floor(time / 1000)}s`);
+      currentEntryIds[projectKey] = response.data.id;
+      log(
+        `entry created with id ${
+          currentEntryIds[projectKey]
+        } for project ${projectKey}, total time: ${Math.floor(time / 1000)}s`
+      );
     } else {
-      const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries/${currentEntryId}`;
+      const entryId = currentEntryIds[projectKey];
+      const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries/${entryId}`;
       await apiFetch<any>(endpoint, apiKey, "PUT", formattedData);
-      log(`entry updated with id ${currentEntryId}, total time: ${Math.floor(time / 1000)}s`);
+      log(
+        `entry updated with id ${entryId} for project ${projectKey}, total time: ${Math.floor(
+          time / 1000
+        )}s`
+      );
     }
   } catch (error) {
     log(`time entry update failed: ${error}`);
@@ -110,12 +124,31 @@ export async function getEntries(
 
   try {
     const data = await apiFetch<any>(endpoint.toString(), apiKey);
-    const entries: TimeEntry[] = data.data.map((entry: any) => ({
-      id: entry.id,
-      start: entry.start,
-      duration: entry.duration * 1000,
-      project: entry.project_id || "No project",
-    }));
+
+    log(
+      `Raw time entries data: ${JSON.stringify(
+        data.data.map((e: any) => ({ id: e.id, project_id: e.project_id }))
+      )}`
+    );
+
+    const entries: TimeEntry[] = data.data.map((entry: any) => {
+      const projectId = entry.project_id || "No project";
+      return {
+        id: entry.id,
+        start: entry.start,
+        duration: entry.duration * 1000,
+        project: projectId,
+      };
+    });
+
+    entries.forEach((entry) => {
+      const projectKey = entry.project || "No project";
+      if (!currentEntryIds[projectKey]) {
+        currentEntryIds[projectKey] = entry.id;
+        log(`Cached entry ID ${entry.id} for project ${projectKey}`);
+      }
+    });
+
     log(`entries fetched: ${entries.length} entries found`);
     return entries;
   } catch (error) {
