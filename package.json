@@ -5,6 +5,7 @@
   "publisher": "PandaDEV",
   "version": "1.1.1",
   "keywords": [
+    "solid",
     "vscode",
     "extension",
     "solidtime",
@@ -111,7 +112,7 @@
     "watch": "esbuild ./src/extension.ts --bundle --outdir=dist --external:vscode --format=cjs --platform=node --watch"
   },
   "devDependencies": {
-    "@types/node": "^22.13.5",
+    "@types/node": "^22.13.8",
     "@types/vscode": "^1.93.0",
     "esbuild": "^0.25.0"
   },
