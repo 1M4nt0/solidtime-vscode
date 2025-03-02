@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
-import { sendUpdate, getEntries } from "./api";
+import { sendUpdate, getEntries, getProjects, createProject } from "./api";
 import { formatTimeSpent } from "./time";
 import { log } from "./log";
 
 export class TimeTracker {
   private statusBar: vscode.StatusBarItem;
-  private timer: NodeJS.Timeout | undefined;
+  private timer: any;
   private sessionStartTime: number;
   private startTime: number;
   private totalTime: number = 0;
@@ -78,7 +78,7 @@ export class TimeTracker {
   public setInitialTime(time: number): void {
     this.totalTime = time;
     this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
-    log(`Initial total time set to ${Math.floor(time/1000)}s`);
+    log(`Initial total time set to ${Math.floor(time / 1000)}s`);
   }
 
   public onActivity(): void {
@@ -161,11 +161,77 @@ export class TimeTracker {
     }
   }
 
+  private async autoSetupProject(): Promise<void> {
+    if (!this.apiKey || !this.apiUrl || !this.orgId || !this.memberId) {
+      log("Missing credentials, skipping auto project setup");
+      return;
+    }
+
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      log("No workspace folder found, skipping auto project setup");
+      return;
+    }
+
+    const config = vscode.workspace.getConfiguration("solidtime", null);
+    const mappings = config.get<Record<string, string | null>>(
+      "projectMappings",
+      {}
+    );
+
+    if (mappings[workspaceFolder.uri.toString()]) {
+      log(
+        `Workspace already mapped to project: ${mappings[workspaceFolder.uri.toString()]
+        }`
+      );
+      return;
+    }
+
+    try {
+      const workspaceName = workspaceFolder.name;
+      log(`Attempting to auto-setup project for workspace: ${workspaceName}`);
+
+      const projects = await getProjects(this.apiKey, this.apiUrl, this.orgId);
+      const similarProject = projects.find(
+        (p) =>
+          p.name.toLowerCase() === workspaceName.toLowerCase() ||
+          p.name.toLowerCase().includes(workspaceName.toLowerCase()) ||
+          workspaceName.toLowerCase().includes(p.name.toLowerCase())
+      );
+
+      let projectId: string;
+
+      if (similarProject) {
+        projectId = similarProject.id;
+        log(`Found similar project: ${similarProject.name} (${projectId})`);
+      } else {
+        const newProject = await createProject(
+          this.apiKey,
+          this.apiUrl,
+          this.orgId,
+          workspaceName
+        );
+        projectId = newProject.id;
+        log(`Created new project: ${newProject.name} (${projectId})`);
+      }
+
+      const newMappings = { ...mappings };
+      newMappings[workspaceFolder.uri.toString()] = projectId;
+      await config.update("projectMappings", newMappings, true);
+
+      log(`Auto-mapped workspace to project ID: ${projectId}`);
+    } catch (error) {
+      log(`Auto project setup failed: ${error}`);
+    }
+  }
+
   public startTracking(
     context: vscode.ExtensionContext,
     isFocused: () => boolean,
     getLastCodingActivity: () => number
   ): void {
+    this.autoSetupProject();
+
     let wasIdle = false;
     let idleStartTime = 0;
     let lastTimerUpdate = Date.now();
@@ -174,7 +240,7 @@ export class TimeTracker {
       const currentTime = Date.now();
       const timeSinceLastCoding = currentTime - getLastCodingActivity();
       const timeSinceLastUpdate = currentTime - lastTimerUpdate;
-      
+
       lastTimerUpdate = currentTime;
 
       const isIdle = timeSinceLastCoding > this.IDLE_TIMEOUT || !isFocused();
@@ -207,7 +273,6 @@ export class TimeTracker {
         return;
       }
 
-      // Only increment time when active (not idle)
       this.totalTime += timeSinceLastUpdate;
       this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
 
@@ -228,6 +293,7 @@ export class TimeTracker {
       dispose: () => {
         if (this.timer) {
           clearInterval(this.timer);
+          this.timer = undefined;
           log(
             `timer cleared, total time: ${Math.floor(this.totalTime / 1000)}s`
           );
@@ -296,6 +362,7 @@ export class TimeTracker {
   public dispose(): void {
     if (this.timer) {
       clearInterval(this.timer);
+      this.timer = undefined;
       log(`timer cleared, total time: ${Math.floor(this.totalTime / 1000)}s`);
     }
     this.statusBar.dispose();
