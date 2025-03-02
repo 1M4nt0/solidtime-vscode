@@ -9,6 +9,19 @@ let startTime: number;
 let totalTime: number = 0;
 let isVSCodeFocused: boolean = true;
 let lastCodingActivity: number = Date.now();
+let currentDay: number = new Date().getDate();
+
+function checkDayTransition() {
+  const now = new Date();
+  const today = now.getDate();
+  
+  if (today !== currentDay) {
+    log(`Day changed from ${currentDay} to ${today}`);
+    currentDay = today;
+    return true;
+  }
+  return false;
+}
 
 export async function activate(context: vscode.ExtensionContext) {
   log("extension activating");
@@ -65,8 +78,29 @@ export async function activate(context: vscode.ExtensionContext) {
     activityTimeout = setTimeout(() => {
       lastCodingActivity = Date.now();
       timeTracker.onActivity();
+      
+      if (checkDayTransition()) {
+        refreshEntriesForNewDay();
+      }
     }, 1000) as unknown as NodeJS.Timeout;
   };
+
+  async function refreshEntriesForNewDay() {
+    log("Day changed - refreshing time entries");
+    try {
+      const entries = await getEntries(apiKey, apiUrl, orgId);
+      const totalDailyTime = entries.reduce(
+        (total, entry) => total + entry.duration,
+        0
+      );
+      log(`New day - total time: ${Math.floor(totalDailyTime / 1000)}s across all projects`);
+      totalTime = totalDailyTime;
+      timeTracker.setInitialTime(totalDailyTime);
+      await timeTracker.forceUpdate();
+    } catch (error) {
+      log(`Day transition refresh failed: ${error}`);
+    }
+  }
 
   vscode.workspace.onDidChangeTextDocument(
     debouncedActivity,
@@ -88,6 +122,10 @@ export async function activate(context: vscode.ExtensionContext) {
     (state) => {
       isVSCodeFocused = state.focused;
       timeTracker.updateFocusState(state.focused);
+      
+      if (state.focused && checkDayTransition()) {
+        refreshEntriesForNewDay();
+      }
     },
     null,
     context.subscriptions
@@ -123,6 +161,18 @@ export async function activate(context: vscode.ExtensionContext) {
   } catch (error) {
     log(`entries load failed: ${error}`);
   }
+
+  const dayCheckInterval = setInterval(() => {
+    if (checkDayTransition()) {
+      refreshEntriesForNewDay();
+    }
+  }, 60000);
+  
+  context.subscriptions.push({
+    dispose: () => {
+      clearInterval(dayCheckInterval);
+    }
+  });
 
   timeTracker.startTracking(
     context,
