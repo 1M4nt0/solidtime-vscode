@@ -11,14 +11,16 @@ export class TimeTracker {
   private totalTime: number = 0;
   private initialTime: number = 0;
   private currentFile: string = "";
-  private lastUpdate: number = 0;
+  private lastHeartbeat: number = 0;
   private readonly IDLE_TIMEOUT = 15 * 60 * 1000;
-  private readonly UPDATE_INTERVAL = 2 * 60 * 1000;
-  private readonly MAX_UPDATE_FREQUENCY = 30 * 1000;
+  private readonly HEARTBEAT_INTERVAL = 2 * 60 * 1000;
+  private readonly FILE_CHANGE_THRESHOLD = 30 * 1000;
   private isVSCodeFocused: boolean = true;
   private lastProjectId: string | null = null;
   private projectSessionTimes: Record<string, number> = {};
   private projectTime: number = 0;
+  private lastFileChangeTime: number = 0;
+  private pendingDuration: number = 0;
 
   constructor(
     private apiKey: string,
@@ -40,7 +42,8 @@ export class TimeTracker {
     this.statusBar.show();
     this.sessionStartTime = sessionStart;
     this.startTime = Date.now();
-    this.lastUpdate = this.startTime;
+    this.lastHeartbeat = this.startTime;
+    this.lastFileChangeTime = this.startTime;
     log(
       `status bar initialized, start time: ${new Date(
         this.startTime
@@ -83,9 +86,35 @@ export class TimeTracker {
 
   public onActivity(): void {
     const currentTime = Date.now();
-    if (currentTime - this.lastUpdate >= this.MAX_UPDATE_FREQUENCY) {
-      this.sendTimeUpdate();
+    const timeSinceLastHeartbeat = currentTime - this.lastHeartbeat;
+    
+    if (timeSinceLastHeartbeat >= this.FILE_CHANGE_THRESHOLD) {
+      this.lastFileChangeTime = currentTime;
+      this.sendHeartbeat();
     }
+  }
+
+  private async sendHeartbeat(): Promise<void> {
+    const currentTime = Date.now();
+    const timeSinceLastHeartbeat = currentTime - this.lastHeartbeat;
+
+    if (timeSinceLastHeartbeat < this.FILE_CHANGE_THRESHOLD) {
+      return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      return;
+    }
+
+    const fileName = editor.document.fileName;
+
+    if (timeSinceLastHeartbeat <= this.IDLE_TIMEOUT) {
+      this.pendingDuration += timeSinceLastHeartbeat;
+    }
+
+    this.lastHeartbeat = currentTime;
+    await this.sendTimeUpdate(fileName);
   }
 
   public updateFocusState(isFocused: boolean): void {
@@ -97,7 +126,7 @@ export class TimeTracker {
     }
 
     if (!isFocused && wasFocused) {
-      this.sendTimeUpdate();
+      this.sendHeartbeat();
     }
   }
 
@@ -195,8 +224,10 @@ export class TimeTracker {
       const similarProject = projects.find(
         (p) =>
           p.name.toLowerCase() === workspaceName.toLowerCase() ||
-          p.name.toLowerCase().includes(workspaceName.toLowerCase()) ||
-          workspaceName.toLowerCase().includes(p.name.toLowerCase())
+          (p.name.toLowerCase().includes(workspaceName.toLowerCase()) && 
+           p.name.toLowerCase().split('-').includes(workspaceName.toLowerCase())) ||
+          (workspaceName.toLowerCase().includes(p.name.toLowerCase()) &&
+           workspaceName.toLowerCase().split('-').includes(p.name.toLowerCase()))
       );
 
       let projectId: string;
@@ -232,62 +263,17 @@ export class TimeTracker {
   ): void {
     this.autoSetupProject();
 
-    let wasIdle = false;
-    let idleStartTime = 0;
-    let lastTimerUpdate = Date.now();
-
     this.timer = setInterval(async () => {
       const currentTime = Date.now();
-      const timeSinceLastCoding = currentTime - getLastCodingActivity();
-      const timeSinceLastUpdate = currentTime - lastTimerUpdate;
-
-      lastTimerUpdate = currentTime;
-
-      const isIdle = timeSinceLastCoding > this.IDLE_TIMEOUT || !isFocused();
-
-      if (isIdle && !wasIdle) {
-        idleStartTime = currentTime;
-        log(
-          `user became idle: idle for ${Math.floor(
-            timeSinceLastCoding / 1000
-          )}s, vscode in focus: ${isFocused()}`
-        );
-
-        await this.sendTimeUpdate();
-        wasIdle = true;
-        return;
-      } else if (!isIdle && wasIdle) {
-        const totalIdleTime = currentTime - idleStartTime;
-        log(
-          `user became active after ${Math.floor(
-            totalIdleTime / 1000
-          )}s of idle time`
-        );
-        wasIdle = false;
-        this.startTime = currentTime;
-        this.sendTimeUpdate();
-        return;
-      }
-
-      if (isIdle) {
-        return;
-      }
-
-      this.totalTime += timeSinceLastUpdate;
-      this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
-
-      const editor = vscode.window.activeTextEditor;
-      if (!isIdle && editor) {
-        const fileName = editor.document.fileName;
-        const shouldUpdate =
-          currentTime - this.lastUpdate >= this.UPDATE_INTERVAL ||
-          this.currentFile !== fileName;
-
-        if (shouldUpdate) {
-          await this.sendTimeUpdate(fileName);
+      const timeSinceLastActivity = currentTime - getLastCodingActivity();
+      
+      if (timeSinceLastActivity <= this.IDLE_TIMEOUT && isFocused()) {
+        const timeSinceLastHeartbeat = currentTime - this.lastHeartbeat;
+        if (timeSinceLastHeartbeat >= this.HEARTBEAT_INTERVAL) {
+          await this.sendHeartbeat();
         }
       }
-    }, this.MAX_UPDATE_FREQUENCY);
+    }, this.HEARTBEAT_INTERVAL);
 
     context.subscriptions.push({
       dispose: () => {
@@ -304,12 +290,10 @@ export class TimeTracker {
 
   private async sendTimeUpdate(fileName?: string): Promise<void> {
     try {
-      const currentTime = Date.now();
       const projectId = this.getCurrentProjectId();
       const projectKey = this.getProjectKey(projectId);
 
       if (this.lastProjectId !== projectId) {
-        this.startTime = Date.now();
         if (this.lastProjectId !== null) {
           log(
             `Project changed from ${this.getProjectKey(
@@ -325,9 +309,7 @@ export class TimeTracker {
       log(`sending update for project: ${projectKey}`);
 
       const projectSessionTime = this.getProjectSessionTime(projectId);
-
-      const timeElapsed = currentTime - this.startTime;
-      const projectTotalTime = this.projectTime + timeElapsed;
+      const projectTotalTime = this.projectTime + this.pendingDuration;
 
       await sendUpdate(
         projectTotalTime,
@@ -339,17 +321,15 @@ export class TimeTracker {
         { project_id: projectId || null }
       );
 
+      this.totalTime += this.pendingDuration;
+      this.pendingDuration = 0;
+      this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
+
       if (fileName) {
         this.currentFile = fileName;
       }
-      this.lastUpdate = currentTime;
 
-      const timeElapsedSeconds = Math.floor(timeElapsed / 1000);
-      const projectTotalSeconds = Math.floor(projectTotalTime / 1000);
-      const totalSeconds = Math.floor(this.totalTime / 1000);
-      log(
-        `time updated: total (all projects) ${totalSeconds}s, current project ${projectTotalSeconds}s, elapsed ${timeElapsedSeconds}s for project ${projectKey}`
-      );
+      log(`time updated: total ${Math.floor(this.totalTime / 1000)}s for project ${projectKey}`);
     } catch (error) {
       log(`update failed: ${error}`);
     }
