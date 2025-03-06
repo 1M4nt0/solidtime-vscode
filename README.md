@@ -1,6 +1,6 @@
 # Solidtime VSCode Extension
 
-This is the official VSCode extension for [Solidtime](https://solidtime.io), a powerful time tracking tool. The extension integrates with Solidtime's API to track your coding time and send periodic updates. Manage your API key, API URL, and organization ID directly from VSCode.
+This is a community made VSCode extension for [Solidtime](https://solidtime.io), a powerful time tracking tool. The extension integrates with Solidtime's API to track your coding time and send periodic updates. Manage your API key, API URL, and organization ID directly from VSCode.
 
 ## Features
 
