@@ -1,16 +1,12 @@
 import * as vscode from "vscode";
 import { sendUpdate, getEntries, getProjects, createProject } from "./api";
-import { formatTimeSpent } from "./time";
 import { log } from "./log";
 
 export class TimeTracker {
   private statusBar: vscode.StatusBarItem;
   private timer: any;
-  private sessionStartTime: number;
   private startTime: number;
   private totalTime: number = 0;
-  private initialTime: number = 0;
-  private currentFile: string = "";
   private lastHeartbeat: number = 0;
   private readonly IDLE_TIMEOUT = 15 * 60 * 1000;
   private readonly HEARTBEAT_INTERVAL = 2 * 60 * 1000;
@@ -19,15 +15,14 @@ export class TimeTracker {
   private lastProjectId: string | null = null;
   private projectSessionTimes: Record<string, number> = {};
   private projectTime: number = 0;
-  private lastFileChangeTime: number = 0;
   private pendingDuration: number = 0;
+  private processedEntryIds: Set<string> = new Set();
 
   constructor(
     private apiKey: string,
     private apiUrl: string,
     private orgId: string,
-    private memberId: string,
-    sessionStart: number
+    private memberId: string
   ) {
     this.statusBar = vscode.window.createStatusBarItem(
       "solidtime.time",
@@ -40,10 +35,8 @@ export class TimeTracker {
       "Solidtime: Today's coding time. Click to visit dashboard.";
     this.statusBar.command = "solidtime.dashboard";
     this.statusBar.show();
-    this.sessionStartTime = sessionStart;
     this.startTime = Date.now();
     this.lastHeartbeat = this.startTime;
-    this.lastFileChangeTime = this.startTime;
     log(
       `status bar initialized, start time: ${new Date(
         this.startTime
@@ -80,16 +73,15 @@ export class TimeTracker {
 
   public setInitialTime(time: number): void {
     this.totalTime = time;
-    this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
+    this.statusBar.text = `$(clock) ${this.formatTimeSpent(this.totalTime)}`;
     log(`Initial total time set to ${Math.floor(time / 1000)}s`);
   }
 
   public onActivity(): void {
     const currentTime = Date.now();
     const timeSinceLastHeartbeat = currentTime - this.lastHeartbeat;
-    
+
     if (timeSinceLastHeartbeat >= this.FILE_CHANGE_THRESHOLD) {
-      this.lastFileChangeTime = currentTime;
       this.sendHeartbeat();
     }
   }
@@ -107,14 +99,12 @@ export class TimeTracker {
       return;
     }
 
-    const fileName = editor.document.fileName;
-
     if (timeSinceLastHeartbeat <= this.IDLE_TIMEOUT) {
       this.pendingDuration += timeSinceLastHeartbeat;
     }
 
     this.lastHeartbeat = currentTime;
-    await this.sendTimeUpdate(fileName);
+    await this.sendTimeUpdate();
   }
 
   public updateFocusState(isFocused: boolean): void {
@@ -150,7 +140,12 @@ export class TimeTracker {
 
       log(`current project id: ${projectKey}`);
 
-      const projectEntries = entries.filter((entry) => {
+      const uniqueEntries = entries.filter(
+        (entry) => !this.processedEntryIds.has(entry.id)
+      );
+      uniqueEntries.forEach((entry) => this.processedEntryIds.add(entry.id));
+
+      const projectEntries = uniqueEntries.filter((entry) => {
         const entryProject = entry.project || "No project";
         const matches = entryProject === projectKey;
         return matches;
@@ -161,7 +156,7 @@ export class TimeTracker {
         0
       );
 
-      const totalTime = entries.reduce(
+      const totalTime = uniqueEntries.reduce(
         (total, entry) => total + entry.duration,
         0
       );
@@ -175,7 +170,7 @@ export class TimeTracker {
       this.projectTime = projectTime;
       this.startTime = Date.now();
       this.totalTime = totalTime;
-      this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
+      this.statusBar.text = `$(clock) ${this.formatTimeSpent(this.totalTime)}`;
       log(
         `time entries refreshed: total ${Math.floor(
           totalTime / 1000
@@ -210,7 +205,8 @@ export class TimeTracker {
 
     if (mappings[workspaceFolder.uri.toString()]) {
       log(
-        `Workspace already mapped to project: ${mappings[workspaceFolder.uri.toString()]
+        `Workspace already mapped to project: ${
+          mappings[workspaceFolder.uri.toString()]
         }`
       );
       return;
@@ -224,10 +220,16 @@ export class TimeTracker {
       const similarProject = projects.find(
         (p) =>
           p.name.toLowerCase() === workspaceName.toLowerCase() ||
-          (p.name.toLowerCase().includes(workspaceName.toLowerCase()) && 
-           p.name.toLowerCase().split('-').includes(workspaceName.toLowerCase())) ||
+          (p.name.toLowerCase().includes(workspaceName.toLowerCase()) &&
+            p.name
+              .toLowerCase()
+              .split("-")
+              .includes(workspaceName.toLowerCase())) ||
           (workspaceName.toLowerCase().includes(p.name.toLowerCase()) &&
-           workspaceName.toLowerCase().split('-').includes(p.name.toLowerCase()))
+            workspaceName
+              .toLowerCase()
+              .split("-")
+              .includes(p.name.toLowerCase()))
       );
 
       let projectId: string;
@@ -266,7 +268,7 @@ export class TimeTracker {
     this.timer = setInterval(async () => {
       const currentTime = Date.now();
       const timeSinceLastActivity = currentTime - getLastCodingActivity();
-      
+
       if (timeSinceLastActivity <= this.IDLE_TIMEOUT && isFocused()) {
         const timeSinceLastHeartbeat = currentTime - this.lastHeartbeat;
         if (timeSinceLastHeartbeat >= this.HEARTBEAT_INTERVAL) {
@@ -288,7 +290,7 @@ export class TimeTracker {
     });
   }
 
-  private async sendTimeUpdate(fileName?: string): Promise<void> {
+  private async sendTimeUpdate(): Promise<void> {
     try {
       const projectId = this.getCurrentProjectId();
       const projectKey = this.getProjectKey(projectId);
@@ -323,13 +325,13 @@ export class TimeTracker {
 
       this.totalTime += this.pendingDuration;
       this.pendingDuration = 0;
-      this.statusBar.text = `$(clock) ${formatTimeSpent(this.totalTime)}`;
+      this.statusBar.text = `$(clock) ${this.formatTimeSpent(this.totalTime)}`;
 
-      if (fileName) {
-        this.currentFile = fileName;
-      }
-
-      log(`time updated: total ${Math.floor(this.totalTime / 1000)}s for project ${projectKey}`);
+      log(
+        `time updated: total ${Math.floor(
+          this.totalTime / 1000
+        )}s for project ${projectKey}`
+      );
     } catch (error) {
       log(`update failed: ${error}`);
     }
@@ -358,5 +360,11 @@ export class TimeTracker {
     this.apiUrl = apiUrl;
     this.orgId = orgId;
     this.memberId = memberId;
+  }
+
+  private formatTimeSpent(totalTime: number): string {
+    const hours = Math.floor(totalTime / (1000 * 60 * 60));
+    const minutes = Math.floor((totalTime % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours} hrs ${minutes} mins`;
   }
 }
