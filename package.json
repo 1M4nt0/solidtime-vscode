@@ -71,6 +71,10 @@
         "title": "Solidtime: Force Time Update"
       },
       {
+        "command": "solidtime.refreshMemberId",
+        "title": "Solidtime: Refresh Member ID"
+      },
+      {
         "command": "solidtime.setProject",
         "title": "Solidtime: Set Project"
       },

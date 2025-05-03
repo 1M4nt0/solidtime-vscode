@@ -67,7 +67,7 @@ export async function activate(context: vscode.ExtensionContext) {
   startTime = Date.now();
   log(`session started at ${new Date(startTime).toISOString()}`);
 
-  timeTracker = new TimeTracker(apiKey, apiUrl, orgId, memberId, startTime);
+  timeTracker = new TimeTracker(apiKey, apiUrl, orgId, memberId);
   lastCodingActivity = startTime;
 
   let activityTimeout: NodeJS.Timeout | null = null;
@@ -107,11 +107,13 @@ export async function activate(context: vscode.ExtensionContext) {
     null,
     context.subscriptions
   );
+
   vscode.window.onDidChangeTextEditorSelection(
     debouncedActivity,
     null,
     context.subscriptions
   );
+  
   vscode.window.onDidChangeActiveTextEditor(
     debouncedActivity,
     null,

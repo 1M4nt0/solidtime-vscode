@@ -1,48 +1,50 @@
-import { log } from "./log";
+import {log} from './log'
+import type {Project} from './types'
 
 export interface TimeEntry {
-  id: string;
-  start: string;
-  duration: number;
-  project: string;
+  id: string
+  start: string
+  duration: number
+  project: string
 }
 
-let currentEntryIds: Record<string, string> = {};
-let cachedUserId: string | null = null;
+let currentEntryIds: Record<string, string> = {}
+let cachedUserId: string | null = null
 
-async function apiFetch<T>(
-  endpoint: string,
-  apiKey: string,
-  method = "GET",
-  body?: any
-): Promise<T> {
+type ApiResponse<T> = {
+  data: T
+}
+
+async function apiFetch<T>(endpoint: string, apiKey: string, method = 'GET', body?: any): Promise<ApiResponse<T>> {
   const headers: HeadersInit = {
     Authorization: `Bearer ${apiKey}`,
-    Accept: "application/json",
-  };
+    Accept: 'application/json',
+  }
 
-  if (body && method !== "GET") {
-    headers["Content-Type"] = "application/json";
+  if (body && method !== 'GET') {
+    headers['Content-Type'] = 'application/json'
   }
 
   const options: RequestInit = {
     method,
     headers,
-  };
-
-  if (method !== "GET" && body) {
-    options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(endpoint, options);
+  if (method !== 'GET' && body) {
+    options.body = JSON.stringify(body)
+  }
 
-  const text = await response.text();
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${text}`);
+  const response = await fetch(endpoint, options)
+  const json = await response.json()
 
-  return text ? (JSON.parse(text) as T) : ({} as T);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${json.message}`)
+  }
+
+  return json
 }
 
-const formatDate = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
+const formatDate = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
 export async function sendUpdate(
   time: number,
@@ -51,18 +53,14 @@ export async function sendUpdate(
   orgId: string,
   memberId: string,
   startTime: number,
-  data: { project_id: string | null }
+  data: {project_id: string | null}
 ): Promise<void> {
-  const projectKey = data.project_id || "no_project";
-  log(
-    `sending update for ${Math.floor(
-      time / 1000
-    )}s of time for project ${projectKey}`
-  );
+  const projectKey = data.project_id || 'no_project'
+  log(`sending update for ${Math.floor(time / 1000)}s of time for project ${projectKey}`)
 
-  const start = new Date(startTime);
-  const durationSeconds = Math.floor(time / 1000);
-  const end = new Date(startTime + durationSeconds * 1000);
+  const start = new Date(startTime)
+  const durationSeconds = Math.floor(time / 1000)
+  const end = new Date(startTime + durationSeconds * 1000)
 
   const formattedData = {
     member_id: memberId,
@@ -71,193 +69,150 @@ export async function sendUpdate(
     duration: durationSeconds,
     billable: false,
     project_id: data.project_id,
-    description: "Coding time from VSCode extension",
+    description: 'Coding time from VSCode extension',
     tags: [],
-  };
+  }
 
   try {
     if (!currentEntryIds[projectKey]) {
-      const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries`;
-      const response = await apiFetch<{ data: { id: string } }>(
-        endpoint,
-        apiKey,
-        "POST",
-        formattedData
-      );
-      currentEntryIds[projectKey] = response.data.id;
+      const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries`
+      const response = await apiFetch<{id: string}>(endpoint, apiKey, 'POST', formattedData)
+      currentEntryIds[projectKey] = response.data.id
       log(
-        `entry created with id ${
-          currentEntryIds[projectKey]
-        } for project ${projectKey}, total time: ${Math.floor(time / 1000)}s`
-      );
-    } else {
-      const entryId = currentEntryIds[projectKey];
-      const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries/${entryId}`;
-      await apiFetch<any>(endpoint, apiKey, "PUT", formattedData);
-      log(
-        `entry updated with id ${entryId} for project ${projectKey}, total time: ${Math.floor(
+        `entry created with id ${currentEntryIds[projectKey]} for project ${projectKey}, total time: ${Math.floor(
           time / 1000
         )}s`
-      );
+      )
+    } else {
+      const entryId = currentEntryIds[projectKey]
+      const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/time-entries/${entryId}`
+      await apiFetch<any>(endpoint, apiKey, 'PUT', formattedData)
+      log(`entry updated with id ${entryId} for project ${projectKey}, total time: ${Math.floor(time / 1000)}s`)
     }
   } catch (error) {
-    log(`time entry update failed: ${error}`);
-    throw error;
+    log(`time entry update failed: ${error}`)
+    throw error
   }
 }
 
-export async function getEntries(
-  apiKey: string,
-  apiUrl: string,
-  orgId: string
-): Promise<TimeEntry[]> {
-  log("fetching time entries");
-  const today = new Date().toISOString().split("T")[0];
-  const start = today + "T00:00:00Z";
-  const end = today + "T23:59:59Z";
+export async function getEntries(apiKey: string, apiUrl: string, orgId: string): Promise<TimeEntry[]> {
+  log('fetching time entries')
+  const today = new Date().toISOString().split('T')[0]
+  const start = today + 'T00:00:00Z'
+  const end = today + 'T23:59:59Z'
 
-  const endpoint = new URL(
-    `${apiUrl}/api/v1/organizations/${orgId}/time-entries`
-  );
-  endpoint.searchParams.set("start", start);
-  endpoint.searchParams.set("end", end);
+  const endpoint = new URL(`${apiUrl}/api/v1/organizations/${orgId}/time-entries`)
+  endpoint.searchParams.set('start', start)
+  endpoint.searchParams.set('end', end)
 
   try {
-    const data = await apiFetch<any>(endpoint.toString(), apiKey);
+    const response = await apiFetch<any>(endpoint.toString(), apiKey)
 
     log(
-      `Raw time entries data: ${JSON.stringify(
-        data.data.map((e: any) => ({ id: e.id, project_id: e.project_id }))
-      )}`
-    );
+      `Raw time entries data: ${JSON.stringify(response.data.map((e: any) => ({id: e.id, project_id: e.project_id})))}`
+    )
 
-    const entries: TimeEntry[] = data.data.map((entry: any) => {
-      const projectId = entry.project_id || "No project";
+    const entries: TimeEntry[] = response.data.map((entry: any) => {
+      const projectId = entry.project_id || 'No project'
       return {
         id: entry.id,
         start: entry.start,
         duration: entry.duration * 1000,
         project: projectId,
-      };
-    });
+      }
+    })
 
     entries.forEach((entry) => {
-      const projectKey = entry.project || "No project";
+      const projectKey = entry.project || 'No project'
       if (!currentEntryIds[projectKey]) {
-        currentEntryIds[projectKey] = entry.id;
-        log(`Cached entry ID ${entry.id} for project ${projectKey}`);
+        currentEntryIds[projectKey] = entry.id
+        log(`Cached entry ID ${entry.id} for project ${projectKey}`)
       }
-    });
+    })
 
-    log(`entries fetched: ${entries.length} entries found`);
-    return entries;
+    log(`entries fetched: ${entries.length} entries found`)
+    return entries
   } catch (error) {
-    log(`fetch failed: ${error}`);
-    return [];
+    log(`fetch failed: ${error}`)
+    return []
   }
 }
 
-export async function getMember(
-  apiKey: string,
-  apiUrl: string,
-  orgId: string
-): Promise<string> {
+export async function getMember(apiKey: string, apiUrl: string, orgId: string): Promise<string> {
   try {
-    const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/members`;
-    const data = await apiFetch<any>(endpoint, apiKey);
-    const userId = await getUserId(apiKey, apiUrl);
-    const member = data.data.find((m: any) => m.user_id === userId);
+    const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/members`
+    const response = await apiFetch<any>(endpoint, apiKey)
+    const userId = await getUserId(apiKey, apiUrl)
+    const member = response.data.find((m: any) => m.user_id === userId)
 
-    if (!member) throw new Error("Member not found");
-    return member.id;
+    if (!member) throw new Error('Member not found')
+    return member.id
   } catch (error) {
-    log(`get member failed: ${error}`);
-    throw error;
+    log(`get member failed: ${error}`)
+    throw error
   }
 }
 
 async function getUserId(apiKey: string, apiUrl: string): Promise<string> {
-  if (cachedUserId) return cachedUserId;
+  if (cachedUserId) return cachedUserId
 
-  const endpoint = `${apiUrl}/api/v1/users/me`;
+  const endpoint = `${apiUrl}/api/v1/users/me`
   try {
-    const data = await apiFetch<{ data: { id: string } }>(endpoint, apiKey);
-    cachedUserId = data.data.id;
-    return data.data.id;
+    const response = await apiFetch<{id: string}>(endpoint, apiKey)
+    cachedUserId = response.data.id
+    return response.data.id
   } catch (error) {
-    log(`get user id failed: ${error}`);
-    throw error;
+    log(`get user id failed: ${error}`)
+    throw error
   }
 }
 
 export interface Organization {
-  id: string;
-  name: string;
+  id: string
+  name: string
 }
 
-export async function getOrganizations(
-  apiKey: string,
-  apiUrl: string
-): Promise<Organization[]> {
-  const endpoint = `${apiUrl}/api/v1/users/me/memberships`;
+export async function getOrganizations(apiKey: string, apiUrl: string): Promise<Organization[]> {
+  const endpoint = `${apiUrl}/api/v1/users/me/memberships`
   try {
-    const data = await apiFetch<any>(endpoint, apiKey);
+    const data = await apiFetch<any>(endpoint, apiKey)
     return data.data.map((membership: any) => ({
       id: membership.organization.id,
       name: membership.organization.name,
-    }));
+    }))
   } catch (error) {
-    log(`get organizations failed: ${error}`);
-    throw error;
+    log(`get organizations failed: ${error}`)
+    throw error
   }
 }
 
-export interface Project {
-  id: string;
-  name: string;
-}
-
-export async function getProjects(
-  apiKey: string,
-  apiUrl: string,
-  orgId: string
-): Promise<Project[]> {
-  const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/projects`;
+export async function getProjects(apiKey: string, apiUrl: string, orgId: string): Promise<Project[]> {
+  const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/projects`
   try {
-    const data = await apiFetch<any>(endpoint, apiKey);
-    return data.data.map((project: any) => ({
-      id: project.id,
-      name: project.name,
-    }));
+    const response = await apiFetch<Project[]>(endpoint, apiKey)
+    return response.data
   } catch (error) {
-    log(`get projects failed: ${error}`);
-    throw error;
+    log(`get projects failed: ${error}`)
+    throw error
   }
 }
 
-export async function createProject(
-  apiKey: string,
-  apiUrl: string,
-  orgId: string,
-  name: string
-): Promise<Project> {
-  const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/projects`;
-  const userId = await getUserId(apiKey, apiUrl);
+export async function createProject(apiKey: string, apiUrl: string, orgId: string, name: string): Promise<Project> {
+  const endpoint = `${apiUrl}/api/v1/organizations/${orgId}/projects`
+  const userId = await getUserId(apiKey, apiUrl)
 
   try {
-    const data = await apiFetch<any>(endpoint, apiKey, "POST", {
+    const response = await apiFetch<Project>(endpoint, apiKey, 'POST', {
       name,
-      color: "#000000",
+      color: '#000000',
       is_billable: true,
       member_ids: [userId],
-    });
+      client_id: null,
+    })
 
-    return {
-      id: data.data.id,
-      name: data.data.name,
-    };
+    return response.data
   } catch (error) {
-    log(`create project failed: ${error}`);
-    throw error;
+    log(`create project failed: ${error}`)
+    throw error
   }
 }

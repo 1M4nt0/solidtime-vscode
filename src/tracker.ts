@@ -198,15 +198,15 @@ export class TimeTracker {
     }
 
     const config = vscode.workspace.getConfiguration("solidtime", null);
-    const mappings = config.get<Record<string, string | null>>(
+    const projectMappings = config.get<Record<string, string | null>>(
       "projectMappings",
       {}
     );
 
-    if (mappings[workspaceFolder.uri.toString()]) {
+    if (projectMappings[workspaceFolder.uri.toString()]) {
       log(
         `Workspace already mapped to project: ${
-          mappings[workspaceFolder.uri.toString()]
+          projectMappings[workspaceFolder.uri.toString()]
         }`
       );
       return;
@@ -217,26 +217,15 @@ export class TimeTracker {
       log(`Attempting to auto-setup project for workspace: ${workspaceName}`);
 
       const projects = await getProjects(this.apiKey, this.apiUrl, this.orgId);
-      const similarProject = projects.find(
-        (p) =>
-          p.name.toLowerCase() === workspaceName.toLowerCase() ||
-          (p.name.toLowerCase().includes(workspaceName.toLowerCase()) &&
-            p.name
-              .toLowerCase()
-              .split("-")
-              .includes(workspaceName.toLowerCase())) ||
-          (workspaceName.toLowerCase().includes(p.name.toLowerCase()) &&
-            workspaceName
-              .toLowerCase()
-              .split("-")
-              .includes(p.name.toLowerCase()))
+      const workspaceProject = projects.find(
+        (p) => p.name.toLowerCase() === workspaceName.toLowerCase()
       );
 
       let projectId: string;
 
-      if (similarProject) {
-        projectId = similarProject.id;
-        log(`Found similar project: ${similarProject.name} (${projectId})`);
+      if (workspaceProject) {
+        projectId = workspaceProject.id;
+        log(`Found workspace project: ${workspaceProject.name} (${projectId})`);
       } else {
         const newProject = await createProject(
           this.apiKey,
@@ -248,7 +237,7 @@ export class TimeTracker {
         log(`Created new project: ${newProject.name} (${projectId})`);
       }
 
-      const newMappings = { ...mappings };
+      const newMappings = { ...projectMappings };
       newMappings[workspaceFolder.uri.toString()] = projectId;
       await config.update("projectMappings", newMappings, true);
 

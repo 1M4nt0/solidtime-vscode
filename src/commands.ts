@@ -277,7 +277,7 @@ export function registerCommands(
   });
 
   registerCommand("solidtime.dashboard", () => {
-    const dashboardUrl = `${apiUrl}/organizations/${orgId}/dashboard`;
+    const dashboardUrl = `${apiUrl}/dashboard`;
     vscode.env.openExternal(vscode.Uri.parse(dashboardUrl));
   });
 
