@@ -53,7 +53,7 @@ export function registerCommands(
       await config.update("apiKey", apiKey, true);
       vscode.window.showInformationMessage("API key updated");
       log("api key updated");
-      timeTracker.updateCredentials(apiKey, apiUrl, orgId, memberId);
+      timeTracker.updateCredentials(orgId, memberId);
     }
   });
 
@@ -68,7 +68,7 @@ export function registerCommands(
       await config.update("apiUrl", apiUrl, true);
       vscode.window.showInformationMessage("API URL updated");
       log(`api url updated to ${apiUrl}`);
-      timeTracker.updateCredentials(apiKey, apiUrl, orgId, memberId);
+      timeTracker.updateCredentials(orgId, memberId);
     }
   });
 
@@ -76,7 +76,7 @@ export function registerCommands(
     const config = vscode.workspace.getConfiguration("solidtime", null);
 
     try {
-      const orgs = await getOrganizations(apiKey, apiUrl);
+      const orgs = await getOrganizations();
       const items = orgs.map((org) => ({
         label: org.name,
         description: org.id,
@@ -123,7 +123,7 @@ export function registerCommands(
       if (selected) {
         orgId = selected.description!;
         await config.update("organizationId", orgId, true);
-        timeTracker.updateCredentials(apiKey, apiUrl, orgId, memberId);
+        timeTracker.updateCredentials(orgId, memberId);
       }
     } catch (error) {
       vscode.window.showErrorMessage("Failed to fetch organizations");
@@ -133,8 +133,8 @@ export function registerCommands(
 
   registerAsyncCommand("solidtime.refreshMemberId", async () => {
     try {
-      memberId = await getMember(apiKey, apiUrl, orgId);
-      timeTracker.updateCredentials(apiKey, apiUrl, orgId, memberId);
+      memberId = await getMember(orgId);
+      timeTracker.updateCredentials(orgId, memberId);
     } catch (error) {
       log(`member refresh failed: ${error}`);
     }
@@ -144,8 +144,6 @@ export function registerCommands(
     try {
       await sendUpdate(
         totalTime,
-        apiKey,
-        apiUrl,
         orgId,
         memberId,
         startTime,
@@ -170,7 +168,7 @@ export function registerCommands(
     }
 
     try {
-      const projects = await getProjects(apiKey, apiUrl, orgId);
+      const projects = await getProjects(orgId);
       const createNewOption: QuickPickItem = {
         label: "$(plus) Create New Project",
         description: "",
@@ -257,7 +255,7 @@ export function registerCommands(
                 value: workspaceFolder.name,
               });
         if (!name) return;
-        const newProject = await createProject(apiKey, apiUrl, orgId, name);
+        const newProject = await createProject(orgId, name);
         projectId = newProject.id;
       } else {
         projectId = selected.description!;
