@@ -10,6 +10,8 @@ type ApiResponse<T> = {
   data: T
 }
 
+const API = () => FetchWrapper.getInstance()
+
 export async function sendUpdate(
   time: number,
   orgId: string,
@@ -37,7 +39,7 @@ export async function sendUpdate(
 
   try {
     if (!mapProjectKeyToCurrentTimeEntryId[projectKey]) {
-      const response = await FetchWrapper.getInstance().request<ApiResponse<{id: string}>>(
+      const response = await API().request<ApiResponse<{id: string}>>(
         `/api/v1/organizations/${orgId}/time-entries`,
         {
           method: 'POST',
@@ -52,7 +54,7 @@ export async function sendUpdate(
       )
     } else {
       const entryId = mapProjectKeyToCurrentTimeEntryId[projectKey]
-      await FetchWrapper.getInstance().request<ApiResponse<any>>(
+      await API().request<ApiResponse<any>>(
         `/api/v1/organizations/${orgId}/time-entries/${entryId}`,
         {
           method: 'PUT',
@@ -75,7 +77,7 @@ export async function getEntries(orgId: string): Promise<TimeEntry[]> {
   const endOfToday = DateUtils.endOfDay(today)
 
   try {
-    const response = await FetchWrapper.getInstance().request<ApiResponse<TimeEntry[]>>(
+    const response = await API().request<ApiResponse<TimeEntry[]>>(
       `/api/v1/organizations/${orgId}/time-entries`,
       {
         method: 'GET',
@@ -108,7 +110,7 @@ export async function getEntries(orgId: string): Promise<TimeEntry[]> {
 
 export async function getMember(orgId: string): Promise<string> {
   try {
-    const response = await FetchWrapper.getInstance().request<ApiResponse<any>>(
+    const response = await API().request<ApiResponse<any>>(
       `/api/v1/organizations/${orgId}/members`,
       {
         method: 'GET',
@@ -129,7 +131,7 @@ async function getUserId(): Promise<string> {
   if (cachedUserId) return cachedUserId
 
   try {
-    const response = await FetchWrapper.getInstance().request<ApiResponse<{id: string}>>(`/api/v1/users/me`, {
+    const response = await API().request<ApiResponse<{id: string}>>(`/api/v1/users/me`, {
       method: 'GET',
     })
     cachedUserId = response.data.id
@@ -147,7 +149,7 @@ export interface Organization {
 
 export async function getOrganizations(): Promise<Organization[]> {
   try {
-    const response = await FetchWrapper.getInstance().request<ApiResponse<any>>(`/api/v1/users/me/memberships`, {
+    const response = await API().request<ApiResponse<any>>(`/api/v1/users/me/memberships`, {
       method: 'GET',
     })
     return response.data.map((membership: any) => ({
@@ -162,7 +164,7 @@ export async function getOrganizations(): Promise<Organization[]> {
 
 export async function getProjects(orgId: string): Promise<Project[]> {
   try {
-    const response = await FetchWrapper.getInstance().request<ApiResponse<Project[]>>(
+    const response = await API().request<ApiResponse<Project[]>>(
       `/api/v1/organizations/${orgId}/projects`,
       {
         method: 'GET',
@@ -179,7 +181,7 @@ export async function createProject(orgId: string, name: string): Promise<Projec
   const userId = await getUserId()
 
   try {
-    const response = await FetchWrapper.getInstance().request<ApiResponse<Project>>(
+    const response = await API().request<ApiResponse<Project>>(
       `/api/v1/organizations/${orgId}/projects`,
       {
         method: 'POST',

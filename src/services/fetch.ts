@@ -18,7 +18,7 @@ export class APIError<T = unknown> extends Error {
     public readonly body: T,
     public readonly request: {url: string; init: RequestInit}
   ) {
-    super(`HTTP ${status}`)
+    super(`HTTP ${status}`)
   }
 }
 
@@ -26,7 +26,7 @@ class FetchWrapper {
   private static instance: FetchWrapper | null = null
   private constructor(private config: FetchWrapperConfig) {}
 
-  static configure(config: FetchWrapperConfig): FetchWrapper {
+  static configInstance(config: FetchWrapperConfig): FetchWrapper {
     if (this.instance) {
       this.instance.config = {...this.instance.config, ...config}
       return this.instance

@@ -33,7 +33,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let orgId = config.get<string>('organizationId') || ''
   let memberId = ''
 
-  FetchWrapper.configure({
+  FetchWrapper.configInstance({
     baseUrl: apiUrl,
     apiKey,
   })
