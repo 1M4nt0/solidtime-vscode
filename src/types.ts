@@ -27,4 +27,35 @@ type TimeEntry = {
   billable: boolean
 }
 
-export type { Project, ProjectId, TimeEntry }
+type User = {
+  id: string
+  name: string
+  email: string
+  profile_photo_url: string
+  timezone: string
+  week_start: string
+}
+
+type Member = {
+  id: string
+  user_id: string
+  name: string
+  email: string
+  role: string
+  is_placeholder: boolean
+  billable_rate: number | null
+}
+
+type Membership = {
+  id: string
+  organization: {
+    id: string
+    name: string
+    currency: string
+  }
+  role: string
+}
+
+type Nullable<T> = T | null
+
+export type { Project, ProjectId, TimeEntry, User, Membership, Nullable, Member }

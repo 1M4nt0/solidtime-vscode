@@ -2,15 +2,17 @@ import {log} from './log'
 import type {Project, TimeEntry} from './types'
 import {DateUtils} from './functions/time'
 import {getProjectKey} from './functions/project'
-import FetchWrapper from './services/fetch'
+import {createTimeEntry, type RequestCreateTimeEntryBody} from './API/organizations/[orgId]/time-entries/post.index'
+import {updateTimeEntry} from './API/organizations/[orgId]/time-entries/[entryId]'
+import {getOrganizationTimeEntries} from './API/organizations/[orgId]/time-entries'
+import {getOrganizationMembers} from './API/organizations/[orgId]/members'
+import {getCurrentUser} from './API/users/me'
+import {getCurrentUserMembership} from './API/users/me/membership'
+import {getOrganizationProjects} from './API/organizations/[orgId]/projects'
+import {createOrganizationProject} from './API/organizations/[orgId]/projects/post.index'
 
 let cachedUserId: string | null = null
 const mapProjectKeyToCurrentTimeEntryId: Record<string, string> = {}
-type ApiResponse<T> = {
-  data: T
-}
-
-const API = () => FetchWrapper.getInstance()
 
 export async function sendUpdate(
   time: number,
@@ -26,27 +28,22 @@ export async function sendUpdate(
   const durationSeconds = Math.floor(time / 1000)
   const end = new Date(startTime + durationSeconds * 1000)
 
-  const formattedData = {
+  const formattedData: RequestCreateTimeEntryBody = {
     member_id: memberId,
     start: DateUtils.format(start, DateUtils.UTC_DATE_TIME_FORMAT),
     end: DateUtils.format(end, DateUtils.UTC_DATE_TIME_FORMAT),
-    duration: durationSeconds,
     billable: false,
     project_id: data.project_id,
     description: 'Coding time from VSCode extension',
     tags: [],
+    task_id: null,
   }
 
   try {
     if (!mapProjectKeyToCurrentTimeEntryId[projectKey]) {
-      const response = await API().request<ApiResponse<{id: string}>>(
-        `/api/v1/organizations/${orgId}/time-entries`,
-        {
-          method: 'POST',
-          body: formattedData,
-        }
-      )
+      const response = await createTimeEntry({orgId}, formattedData)
       mapProjectKeyToCurrentTimeEntryId[projectKey] = response.data.id
+
       log(
         `entry created with id ${
           mapProjectKeyToCurrentTimeEntryId[projectKey]
@@ -54,13 +51,7 @@ export async function sendUpdate(
       )
     } else {
       const entryId = mapProjectKeyToCurrentTimeEntryId[projectKey]
-      await API().request<ApiResponse<any>>(
-        `/api/v1/organizations/${orgId}/time-entries/${entryId}`,
-        {
-          method: 'PUT',
-          body: formattedData,
-        }
-      )
+      await updateTimeEntry({orgId, entryId}, formattedData)
       log(`entry updated with id ${entryId} for project ${projectKey}, total time: ${Math.floor(time / 1000)}s`)
     }
   } catch (error) {
@@ -77,20 +68,8 @@ export async function getEntries(orgId: string): Promise<TimeEntry[]> {
   const endOfToday = DateUtils.endOfDay(today)
 
   try {
-    const response = await API().request<ApiResponse<TimeEntry[]>>(
-      `/api/v1/organizations/${orgId}/time-entries`,
-      {
-        method: 'GET',
-        searchParams: {
-          start: DateUtils.format(startOfToday, DateUtils.UTC_DATE_TIME_FORMAT),
-          end: DateUtils.format(endOfToday, DateUtils.UTC_DATE_TIME_FORMAT),
-        },
-      }
-    )
-
-    log(
-      `Raw time entries data: ${JSON.stringify(response.data.map((e: any) => ({id: e.id, project_id: e.project_id})))}`
-    )
+    const response = await getOrganizationTimeEntries({orgId, start: startOfToday, end: endOfToday})
+    log(`Raw time entries data: ${JSON.stringify(response.data.map((e) => ({id: e.id, project_id: e.project_id})))}`)
 
     response.data.forEach((entry) => {
       const projectKey = entry.project_id || 'No project'
@@ -110,14 +89,9 @@ export async function getEntries(orgId: string): Promise<TimeEntry[]> {
 
 export async function getMember(orgId: string): Promise<string> {
   try {
-    const response = await API().request<ApiResponse<any>>(
-      `/api/v1/organizations/${orgId}/members`,
-      {
-        method: 'GET',
-      }
-    )
+    const response = await getOrganizationMembers({orgId})
     const userId = await getUserId()
-    const member = response.data.find((m: any) => m.user_id === userId)
+    const member = response.data.find((m) => m.user_id === userId)
 
     if (!member) throw new Error('Member not found')
     return member.id
@@ -131,9 +105,7 @@ async function getUserId(): Promise<string> {
   if (cachedUserId) return cachedUserId
 
   try {
-    const response = await API().request<ApiResponse<{id: string}>>(`/api/v1/users/me`, {
-      method: 'GET',
-    })
+    const response = await getCurrentUser()
     cachedUserId = response.data.id
     return response.data.id
   } catch (error) {
@@ -149,10 +121,8 @@ export interface Organization {
 
 export async function getOrganizations(): Promise<Organization[]> {
   try {
-    const response = await API().request<ApiResponse<any>>(`/api/v1/users/me/memberships`, {
-      method: 'GET',
-    })
-    return response.data.map((membership: any) => ({
+    const response = await getCurrentUserMembership()
+    return response.data.map((membership) => ({
       id: membership.organization.id,
       name: membership.organization.name,
     }))
@@ -164,12 +134,7 @@ export async function getOrganizations(): Promise<Organization[]> {
 
 export async function getProjects(orgId: string): Promise<Project[]> {
   try {
-    const response = await API().request<ApiResponse<Project[]>>(
-      `/api/v1/organizations/${orgId}/projects`,
-      {
-        method: 'GET',
-      }
-    )
+    const response = await getOrganizationProjects({orgId})
     return response.data
   } catch (error) {
     log(`get projects failed: ${error}`)
@@ -181,18 +146,16 @@ export async function createProject(orgId: string, name: string): Promise<Projec
   const userId = await getUserId()
 
   try {
-    const response = await API().request<ApiResponse<Project>>(
-      `/api/v1/organizations/${orgId}/projects`,
+    const response = await createOrganizationProject(
+      {orgId},
       {
-        method: 'POST',
-        body: {
-          name,
-          color: '#000000',
-          is_billable: true,
-          member_ids: [userId],
+        name,
+        color: '#000000',
+        is_billable: true,
+        member_ids: [userId],
         client_id: null,
-      },
-    })
+      }
+    )
 
     return response.data
   } catch (error) {
