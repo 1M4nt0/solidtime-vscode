@@ -1,6 +1,6 @@
-import API from "../../"
-import type { FetchAPI, APIResponse } from "../../../models/api"
-import type { User } from "../../../types"
+import {API} from '../../../services/injection'
+import type {FetchAPI, APIResponse} from '../../../models/api'
+import type {User} from '../../../types'
 
 type GetCurrentUserResponse = APIResponse<User>
 

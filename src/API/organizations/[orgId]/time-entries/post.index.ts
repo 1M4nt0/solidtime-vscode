@@ -1,11 +1,12 @@
-import API from '../../..'
+import {API} from '../../../../services/injection'
+import {DateUtils} from '../../../../functions/time'
 import type {APIResponse, FetchAPI} from '../../../../models/api'
-import type { Nullable, TimeEntry } from '../../../../types'
+import type {Nullable, TimeEntry} from '../../../../types'
 
 type RequestCreateTimeEntryBody = {
   member_id: string
-  start: string
-  end?: string
+  start: Date
+  end?: Date
   billable: boolean
   project_id?: Nullable<string>
   description?: Nullable<string>
@@ -25,7 +26,11 @@ const createTimeEntry: FetchAPI<CreateTimeEntryResponse, [RequestCreateTimeEntry
 ) => {
   return API().request(`/organizations/${params.orgId}/time-entries`, {
     method: 'POST',
-    body,
+    body: {
+      ...body,
+      start: DateUtils.format(body.start, DateUtils.UTC_DATE_TIME_FORMAT),
+      end: body.end ? DateUtils.format(body.end, DateUtils.UTC_DATE_TIME_FORMAT) : undefined,
+    },
   })
 }
 

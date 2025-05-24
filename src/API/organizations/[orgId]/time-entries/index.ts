@@ -1,4 +1,4 @@
-import API from '../../..'
+import {API} from '../../../../services/injection'
 import {DateUtils} from '../../../../functions/time'
 import type {APIResponse, FetchAPI} from '../../../../models/api'
 import type {TimeEntry} from '../../../../types'

@@ -1,4 +1,5 @@
-import API from '../../../../'
+import {API} from '../../../../../services/injection'
+import { DateUtils } from '../../../../../functions/time'
 import type {APIResponse, FetchAPI} from '../../../../../models/api'
 import type {Nullable, TimeEntry} from '../../../../../types'
 
@@ -8,10 +9,10 @@ type RequestUpdateTimeEntryParams = {
 }
 
 type RequestUpdateTimeEntryBody = {
-  member_id: string
-  start: string
-  end?: string
-  billable: boolean
+  member_id?: string
+  start?: Date
+  end?: Date
+  billable?: boolean
   project_id?: Nullable<string>
   description?: Nullable<string>
   tags?: Array<Nullable<string>>
@@ -26,7 +27,11 @@ const updateTimeEntry: FetchAPI<UpdateTimeEntryResponse, [RequestUpdateTimeEntry
 ) => {
   return API().request<UpdateTimeEntryResponse>(`/organizations/${params.orgId}/time-entries/${params.entryId}`, {
     method: 'PUT',
-    body,
+    body: {
+      ...body,
+      start: body.start ? DateUtils.format(body.start, DateUtils.UTC_DATE_TIME_FORMAT) : undefined,
+      end: body.end ? DateUtils.format(body.end, DateUtils.UTC_DATE_TIME_FORMAT) : undefined,
+    },
   })
 }
 

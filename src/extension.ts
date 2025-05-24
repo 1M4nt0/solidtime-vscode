@@ -1,15 +1,15 @@
 import * as vscode from 'vscode'
 import {getEntries, getMember} from './api'
-import {log} from './log'
-import {TimeTracker} from './tracker'
+import {initLoggerInjection, Logger} from './services/injection'
 import {registerCommands} from './commands'
-import FetchWrapper from './services/fetch'
+import {LocalFileStorageService} from './services/timeTracker'
+import {initFetchWrapperInjection, initTimeTrackerServiceInjection, TimeTracker} from './services/injection'
 
-let timeTracker: TimeTracker
+const CONFIGURATION_SLUG = 'solidtime'
+const EMPTY_PROJECT_ID = 'no_project'
+
 let startTime: number
 let totalTime: number = 0
-let isVSCodeFocused: boolean = true
-let lastCodingActivity: number = Date.now()
 let currentDay: number = new Date().getDate()
 
 function checkDayTransition() {
@@ -17,62 +17,59 @@ function checkDayTransition() {
   const today = now.getDate()
 
   if (today !== currentDay) {
-    log(`Day changed from ${currentDay} to ${today}`)
+    Logger().log(`Day changed from ${currentDay} to ${today}`)
     currentDay = today
     return true
   }
   return false
 }
 
-export async function activate(context: vscode.ExtensionContext) {
-  log('extension activating')
+const bootstrap = async () => {
+  const config = vscode.workspace.getConfiguration(CONFIGURATION_SLUG, null)
+  const apiKey = config.get<string>('apiKey')
+  const apiUrl = config.get<string>('apiUrl')
+  const orgId = config.get<string>('organizationId')
+  const projectMappings = config.get<Record<string, string | null>>('projectMappings', {})
 
-  const config = vscode.workspace.getConfiguration('solidtime', null)
-  let apiKey = config.get<string>('apiKey') || ''
-  let apiUrl = config.get<string>('apiUrl') || ''
-  let orgId = config.get<string>('organizationId') || ''
-  let memberId = ''
+  if (!apiKey || !apiUrl || !orgId) {
+    const missingFields = []
+    if (!apiKey) missingFields.push('apiKey')
+    if (!apiUrl) missingFields.push('apiUrl')
+    if (!orgId) missingFields.push('organizationId')
+    throw new Error(`Missing required configuration: ${missingFields.join(', ')}`)
+  }
 
-  FetchWrapper.configInstance({
-    baseUrl: apiUrl,
+  initLoggerInjection()
+
+  initFetchWrapperInjection({
+    apiUrl,
     apiKey,
   })
 
-  log(`initial config: apiKey exists: ${!!apiKey}, apiUrl: ${apiUrl}, orgId: ${orgId}`)
+  const memberId = await getMember(orgId)
 
-  if (apiUrl) {
-    apiUrl = apiUrl.replace(/\/api\/v1/g, '').replace(/\/+$/, '')
-    await config.update('apiUrl', apiUrl, true)
-    log(`api url normalized to ${apiUrl}`)
-  }
+  initTimeTrackerServiceInjection({
+    orgId,
+    memberId,
+    storage: new LocalFileStorageService(),
+    workspace: vscode.workspace.name ?? EMPTY_PROJECT_ID,
+  })
 
-  if (!apiKey) {
-    log('no api key found')
-    const key = await vscode.window.showInputBox({
-      placeHolder: 'Enter your Solidtime API key',
-      prompt: 'Enter your Solidtime API key',
-    })
-    if (key) {
-      apiKey = key
-      await config.update('apiKey', apiKey, true)
-      log('api key saved')
-    } else {
-      log('no api key provided')
-      return
-    }
+  return {
+    apiKey,
+    apiUrl,
+    orgId,
+    memberId,
+    projectMappings,
   }
+}
 
-  try {
-    memberId = await getMember(orgId)
-  } catch (error) {
-    log(`member fetch failed: ${error}`)
-  }
+export async function activate(context: vscode.ExtensionContext) {
+  const {apiKey, apiUrl, orgId, memberId, projectMappings} = await bootstrap()
 
   startTime = Date.now()
-  log(`session started at ${new Date(startTime).toISOString()}`)
-
-  timeTracker = new TimeTracker(orgId, memberId)
-  lastCodingActivity = startTime
+  Logger().log('extension activating')
+  Logger().log(`session started at ${new Date(startTime).toISOString()}`)
 
   let activityTimeout: NodeJS.Timeout | null = null
   const debouncedActivity = () => {
@@ -80,8 +77,7 @@ export async function activate(context: vscode.ExtensionContext) {
       clearTimeout(activityTimeout)
     }
     activityTimeout = setTimeout(() => {
-      lastCodingActivity = Date.now()
-      timeTracker.onActivity()
+      TimeTracker().onActivity()
 
       if (checkDayTransition()) {
         refreshEntriesForNewDay()
@@ -90,16 +86,14 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   async function refreshEntriesForNewDay() {
-    log('Day changed - refreshing time entries')
+    Logger().log('Day changed - refreshing time entries')
     try {
       const entries = await getEntries(orgId)
       const totalDailyTime = entries.reduce((total, entry) => total + (entry.duration || 0), 0)
-      log(`New day - total time: ${Math.floor(totalDailyTime / 1000)}s across all projects`)
+      Logger().log(`New day - total time: ${Math.floor(totalDailyTime / 1000)}s across all projects`)
       totalTime = totalDailyTime
-      timeTracker.setInitialTime(totalDailyTime)
-      await timeTracker.forceUpdate()
     } catch (error) {
-      log(`Day transition refresh failed: ${error}`)
+      Logger().log(`Day transition refresh failed: ${error}`)
     }
   }
 
@@ -111,11 +105,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   vscode.window.onDidChangeWindowState(
     (state) => {
-      isVSCodeFocused = state.focused
-      timeTracker.updateFocusState(state.focused)
-
-      if (state.focused && checkDayTransition()) {
-        refreshEntriesForNewDay()
+      if (state.focused) {
+        TimeTracker().resume()
+        if (checkDayTransition()) {
+          refreshEntriesForNewDay()
+        }
+      } else {
+        TimeTracker().pause()
       }
     },
     null,
@@ -123,33 +119,29 @@ export async function activate(context: vscode.ExtensionContext) {
   )
 
   try {
-    log("fetching today's entries")
+    Logger().log("fetching today's entries")
     const entries = await getEntries(orgId)
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]
-    const mappings = config.get<Record<string, string | null>>('projectMappings', {})
-    const currentProjectId = workspaceFolder ? mappings[workspaceFolder.uri.toString()] : null
+    const currentProjectId = workspaceFolder ? projectMappings[workspaceFolder.uri.toString()] : null
 
-    log(`current project id at startup: ${currentProjectId || 'No project'}`)
+    Logger().log(`current project id at startup: ${currentProjectId || 'No project'}`)
 
     const totalDailyTime = entries.reduce((total, entry) => total + (entry.duration || 0), 0)
 
-    log(`total daily time: ${Math.floor(totalDailyTime / 1000)}s across all projects`)
+    Logger().log(`total daily time: ${Math.floor(totalDailyTime / 1000)}s across all projects`)
 
     totalTime = totalDailyTime
-    timeTracker.setInitialTime(totalDailyTime)
-    log(`entries loaded: ${Math.floor(totalDailyTime / 1000)}s total from ${entries.length} entries`)
-
-    await timeTracker.forceUpdate()
+    Logger().log(`entries loaded: ${Math.floor(totalDailyTime / 1000)}s total from ${entries.length} entries`)
   } catch (error) {
-    log(`entries load failed: ${error}`)
+    Logger().log(`entries load failed: ${error}`)
   }
 
   const dayCheckInterval = setInterval(() => {
     if (checkDayTransition()) {
       refreshEntriesForNewDay()
     }
-  }, 60000)
+  }, 60_000)
 
   context.subscriptions.push({
     dispose: () => {
@@ -157,20 +149,16 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   })
 
-  timeTracker.startTracking(
-    context,
-    () => isVSCodeFocused,
-    () => lastCodingActivity
-  )
+  TimeTracker().start()
 
-  registerCommands(context, timeTracker, apiKey, apiUrl, orgId, memberId, totalTime, startTime)
+  registerCommands(context, TimeTracker(), apiKey, apiUrl, orgId, memberId, totalTime, startTime)
 
-  log('extension activated')
+  Logger().log('extension activated')
 }
 
 export function deactivate() {
-  log('extension deactivating')
-  if (timeTracker) {
-    timeTracker.dispose()
+  Logger().log('extension deactivating')
+  if (TimeTracker()) {
+    TimeTracker().stop()
   }
 }

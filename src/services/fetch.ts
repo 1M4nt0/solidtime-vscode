@@ -1,6 +1,8 @@
+import {inject, injectable} from 'inversify'
+
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
-export interface FetchWrapperConfig {
+type FetchWrapperConfig = {
   baseUrl: string
   apiKey: string
 }
@@ -22,28 +24,17 @@ export class APIError<T = unknown> extends Error {
   }
 }
 
+const FetchWrapperConfigSymbol = Symbol.for('FetchWrapperConfig')
+const FetchWrapperSymbol = Symbol.for('FetchWrapper')
+
+@injectable()
 class FetchWrapper {
-  private static instance: FetchWrapper | null = null
-  private constructor(private config: FetchWrapperConfig) {}
-
-  static configInstance(config: FetchWrapperConfig): FetchWrapper {
-    if (this.instance) {
-      this.instance.config = {...this.instance.config, ...config}
-      return this.instance
-    }
-    this.instance = new FetchWrapper(config)
-    return this.instance
-  }
-
-  static getInstance(): FetchWrapper {
-    if (!this.instance) throw new Error('FetchWrapper has not been configured yet.')
-    return this.instance
-  }
+  public constructor(@inject(FetchWrapperConfigSymbol) private readonly config: FetchWrapperConfig) {}
 
   async request<R = unknown, B = unknown>(path: string, options: RequestOptions<B> = {}): Promise<R> {
     const {baseUrl, apiKey} = this.config
 
-    const url = new URL(path, baseUrl)
+    const url = new URL(baseUrl + path)
     if (options.searchParams) {
       Object.entries(options.searchParams).forEach(([k, v]) => url.searchParams.append(k, String(v)))
     }
@@ -82,4 +73,5 @@ class FetchWrapper {
   }
 }
 
-export default FetchWrapper
+export {FetchWrapper, FetchWrapperConfigSymbol, FetchWrapperSymbol}
+export type {FetchWrapperConfig}

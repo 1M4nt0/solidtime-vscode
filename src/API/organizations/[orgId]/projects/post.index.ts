@@ -1,4 +1,4 @@
-import API from '../../..'
+import {API} from '../../../../services/injection'
 import type {APIResponse, FetchAPI} from '../../../../models/api'
 import type {Project} from '../../../../types'
 

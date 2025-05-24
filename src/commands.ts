@@ -6,8 +6,8 @@ import {
   createProject,
   sendUpdate,
 } from "./api";
-import { log, outputChannel } from "./log";
-import { TimeTracker } from "./tracker";
+import { Logger } from "./services/injection";
+import { TimeTrackerService } from "./services/timeTracker";
 
 interface QuickPickItem extends vscode.QuickPickItem {
   label: string;
@@ -16,7 +16,7 @@ interface QuickPickItem extends vscode.QuickPickItem {
 
 export function registerCommands(
   context: vscode.ExtensionContext,
-  timeTracker: TimeTracker,
+  timeTracker: TimeTrackerService,
   apiKey: string,
   apiUrl: string,
   orgId: string,
@@ -52,8 +52,7 @@ export function registerCommands(
       apiKey = key;
       await config.update("apiKey", apiKey, true);
       vscode.window.showInformationMessage("API key updated");
-      log("api key updated");
-      timeTracker.updateCredentials(orgId, memberId);
+      Logger().log("api key updated");
     }
   });
 
@@ -67,8 +66,7 @@ export function registerCommands(
       apiUrl = url.replace(/\/api\/v1/g, "").replace(/\/+$/, "");
       await config.update("apiUrl", apiUrl, true);
       vscode.window.showInformationMessage("API URL updated");
-      log(`api url updated to ${apiUrl}`);
-      timeTracker.updateCredentials(orgId, memberId);
+      Logger().log(`api url updated to ${apiUrl}`);
     }
   });
 
@@ -123,20 +121,18 @@ export function registerCommands(
       if (selected) {
         orgId = selected.description!;
         await config.update("organizationId", orgId, true);
-        timeTracker.updateCredentials(orgId, memberId);
       }
     } catch (error) {
       vscode.window.showErrorMessage("Failed to fetch organizations");
-      log(`get organizations failed: ${error}`);
+      Logger().log(`get organizations failed: ${error}`);
     }
   });
 
   registerAsyncCommand("solidtime.refreshMemberId", async () => {
     try {
       memberId = await getMember(orgId);
-      timeTracker.updateCredentials(orgId, memberId);
     } catch (error) {
-      log(`member refresh failed: ${error}`);
+      Logger().log(`member refresh failed: ${error}`);
     }
   });
 
@@ -152,7 +148,7 @@ export function registerCommands(
       vscode.window.showInformationMessage("Time update sent");
     } catch (error) {
       vscode.window.showErrorMessage("Time update failed");
-      log(`force update failed: ${error}`);
+      Logger().log(`force update failed: ${error}`);
     }
   });
 
@@ -160,7 +156,7 @@ export function registerCommands(
     const config = vscode.workspace.getConfiguration("solidtime");
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      log("No workspace folder found");
+      Logger().log("No workspace folder found");
       vscode.window.showErrorMessage(
         "Please open a workspace folder to set a project"
       );
@@ -270,16 +266,12 @@ export function registerCommands(
       );
     } catch (error) {
       vscode.window.showErrorMessage("Failed to set project");
-      log(`set project failed: ${error}`);
+      Logger().log(`set project failed: ${error}`);
     }
   });
 
   registerCommand("solidtime.dashboard", () => {
     const dashboardUrl = `${apiUrl}/dashboard`;
     vscode.env.openExternal(vscode.Uri.parse(dashboardUrl));
-  });
-
-  registerCommand("solidtime.showOutput", () => {
-    outputChannel.show();
   });
 }

@@ -126,6 +126,7 @@
   },
   "license": "GPL-3.0",
   "dependencies": {
-    "date-fns": "^4.1.0"
+    "date-fns": "^4.1.0",
+    "inversify": "^7.5.1"
   }
 }
